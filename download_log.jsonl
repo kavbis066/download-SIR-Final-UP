@@ -13,3 +13,35 @@
 {"ac": "16", "part": 1, "status": "error", "detail": "body read failed: (\"Connection broken: ConnectionResetError(54, 'Connection reset by peer')\", ConnectionResetError(54, 'Connection reset by peer'))", "ts": 1790931734.803856}
 {"ac": "12", "part": 2, "status": "error", "detail": "body read failed: HTTPSConnectionPool(host='voters.eci.gov.in', port=443): Read timed out.", "ts": 1790931734.856577}
 {"ac": "30", "part": 3, "status": "error", "detail": "body read failed: HTTPSConnectionPool(host='voters.eci.gov.in', port=443): Read timed out.", "ts": 1790931734.858023}
+{"ac": "18", "part": 55, "status": "error", "detail": "body read failed: HTTPSConnectionPool(host='voters.eci.gov.in', port=443): Read timed out.", "ts": 1790932464.016363}
+{"ac": "26", "part": 21, "status": "error", "detail": "body read failed: HTTPSConnectionPool(host='voters.eci.gov.in', port=443): Read timed out.", "ts": 1790932464.021385}
+{"ac": "11", "part": 53, "status": "error", "detail": "body read failed: HTTPSConnectionPool(host='voters.eci.gov.in', port=443): Read timed out.", "ts": 1790932464.021982}
+{"ac": "23", "part": 39, "status": "error", "detail": "body read failed: HTTPSConnectionPool(host='voters.eci.gov.in', port=443): Read timed out.", "ts": 1790932470.422421}
+{"ac": "20", "part": 36, "status": "error", "detail": "body read failed: HTTPSConnectionPool(host='voters.eci.gov.in', port=443): Read timed out.", "ts": 1790932470.423716}
+{"ac": "22", "part": 8, "status": "error", "detail": "body read failed: HTTPSConnectionPool(host='voters.eci.gov.in', port=443): Read timed out.", "ts": 1790932470.4241312}
+{"ac": "32", "part": 4, "status": "error", "detail": "body read failed: HTTPSConnectionPool(host='voters.eci.gov.in', port=443): Read timed out.", "ts": 1790932470.425268}
+{"ac": "13", "part": 20, "status": "error", "detail": "body read failed: HTTPSConnectionPool(host='voters.eci.gov.in', port=443): Read timed out.", "ts": 1790932470.4257548}
+{"ac": "27", "part": 17, "status": "error", "detail": "body read failed: HTTPSConnectionPool(host='voters.eci.gov.in', port=443): Read timed out.", "ts": 1790932470.436269}
+{"ac": "12", "part": 20, "status": "error", "detail": "body read failed: HTTPSConnectionPool(host='voters.eci.gov.in', port=443): Read timed out.", "ts": 1790932470.97809}
+{"ac": "36", "part": 9, "status": "error", "detail": "body read failed: HTTPSConnectionPool(host='voters.eci.gov.in', port=443): Read timed out.", "ts": 1790932472.380061}
+{"ac": "15", "part": 20, "status": "error", "detail": "body read failed: HTTPSConnectionPool(host='voters.eci.gov.in', port=443): Read timed out.", "ts": 1790932472.381442}
+{"ac": "9", "part": 10, "status": "error", "detail": "body read failed: HTTPSConnectionPool(host='voters.eci.gov.in', port=443): Read timed out.", "ts": 1790932472.3855019}
+{"ac": "14", "part": 37, "status": "error", "detail": "body read failed: HTTPSConnectionPool(host='voters.eci.gov.in', port=443): Read timed out.", "ts": 1790932472.4451048}
+{"ac": "33", "part": 17, "status": "error", "detail": "body read failed: HTTPSConnectionPool(host='voters.eci.gov.in', port=443): Read timed out.", "ts": 1790932472.448501}
+{"ac": "8", "part": 18, "status": "error", "detail": "body read failed: HTTPSConnectionPool(host='voters.eci.gov.in', port=443): Read timed out.", "ts": 1790932472.4485178}
+{"ac": "31", "part": 4, "status": "error", "detail": "body read failed: HTTPSConnectionPool(host='voters.eci.gov.in', port=443): Read timed out.", "ts": 1790932472.471929}
+{"ac": "30", "part": 7, "status": "error", "detail": "body read failed: HTTPSConnectionPool(host='voters.eci.gov.in', port=443): Read timed out.", "ts": 1790932472.471997}
+{"ac": "28", "part": 35, "status": "error", "detail": "body read failed: HTTPSConnectionPool(host='voters.eci.gov.in', port=443): Read timed out.", "ts": 1790932472.4728918}
+{"ac": "19", "part": 16, "status": "error", "detail": "body read failed: HTTPSConnectionPool(host='voters.eci.gov.in', port=443): Read timed out.", "ts": 1790932472.473016}
+{"ac": "20", "part": 48, "status": "error", "detail": "body read failed: HTTPSConnectionPool(host='voters.eci.gov.in', port=443): Read timed out.", "ts": 1790932635.080526}
+{"ac": "11", "part": 60, "status": "error", "detail": "body read failed: HTTPSConnectionPool(host='voters.eci.gov.in', port=443): Read timed out.", "ts": 1790932635.0921311}
+{"ac": "12", "part": 51, "status": "error", "detail": "body read failed: HTTPSConnectionPool(host='voters.eci.gov.in', port=443): Read timed out.", "ts": 1790932636.3377721}
+{"ac": "22", "part": 22, "status": "error", "detail": "body read failed: HTTPSConnectionPool(host='voters.eci.gov.in', port=443): Read timed out.", "ts": 1790932636.340466}
+{"ac": "24", "part": 45, "status": "error", "detail": "body read failed: HTTPSConnectionPool(host='voters.eci.gov.in', port=443): Read timed out.", "ts": 1790932636.342965}
+{"ac": "9", "part": 43, "status": "error", "detail": "body read failed: HTTPSConnectionPool(host='voters.eci.gov.in', port=443): Read timed out.", "ts": 1790932653.790995}
+{"ac": "32", "part": 18, "status": "error", "detail": "body read failed: HTTPSConnectionPool(host='voters.eci.gov.in', port=443): Read timed out.", "ts": 1790932653.801472}
+{"ac": "33", "part": 37, "status": "error", "detail": "body read failed: HTTPSConnectionPool(host='voters.eci.gov.in', port=443): Read timed out.", "ts": 1790932653.80253}
+{"ac": "19", "part": 42, "status": "error", "detail": "body read failed: HTTPSConnectionPool(host='voters.eci.gov.in', port=443): Read timed out.", "ts": 1790932743.138221}
+{"ac": "31", "part": 23, "status": "error", "detail": "body read failed: HTTPSConnectionPool(host='voters.eci.gov.in', port=443): Read timed out.", "ts": 1790932745.227735}
+{"ac": "25", "part": 55, "status": "error", "detail": "body read failed: HTTPSConnectionPool(host='voters.eci.gov.in', port=443): Read timed out.", "ts": 1790932745.2277849}
+{"ac": "38", "part": 75, "status": "error", "detail": "body read failed: (\"Connection broken: ConnectionResetError(54, 'Connection reset by peer')\", ConnectionResetError(54, 'Connection reset by peer'))", "ts": 1790932759.886615}
