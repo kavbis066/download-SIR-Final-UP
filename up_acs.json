@@ -1,0 +1,3629 @@
+[
+  {
+    "stateCd": "S24",
+    "districtCd": "S2401",
+    "asmblyNo": "1",
+    "asmblyName": "Behat",
+    "category": "GEN",
+    "pcNo": "1",
+    "acId": "7047"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2401",
+    "asmblyNo": "2",
+    "asmblyName": "Nakur",
+    "category": "GEN",
+    "pcNo": "2",
+    "acId": "7048"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2401",
+    "asmblyNo": "3",
+    "asmblyName": "Saharanpur Nagar",
+    "category": "GEN",
+    "pcNo": "1",
+    "acId": "7043"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2401",
+    "asmblyNo": "4",
+    "asmblyName": "Saharanpur  ",
+    "category": "GEN",
+    "pcNo": "1",
+    "acId": "7044"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2401",
+    "asmblyNo": "5",
+    "asmblyName": "Deoband",
+    "category": "GEN",
+    "pcNo": "1",
+    "acId": "7045"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2401",
+    "asmblyNo": "6",
+    "asmblyName": "Rampur Maniharan ",
+    "category": "SC",
+    "pcNo": "1",
+    "acId": "7046"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2401",
+    "asmblyNo": "7",
+    "asmblyName": "Gangoh",
+    "category": "GEN",
+    "pcNo": "2",
+    "acId": "7049"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2474",
+    "asmblyNo": "8",
+    "asmblyName": "Kairana",
+    "category": "GEN",
+    "pcNo": "2",
+    "acId": "7050"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2474",
+    "asmblyNo": "9",
+    "asmblyName": "Thana Bhawan",
+    "category": "GEN",
+    "pcNo": "2",
+    "acId": "7051"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2474",
+    "asmblyNo": "10",
+    "asmblyName": "Shamli",
+    "category": "GEN",
+    "pcNo": "2",
+    "acId": "7052"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2402",
+    "asmblyNo": "11",
+    "asmblyName": "Budhana",
+    "category": "GEN",
+    "pcNo": "3",
+    "acId": "7053"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2402",
+    "asmblyNo": "12",
+    "asmblyName": "Charthawal",
+    "category": "GEN",
+    "pcNo": "3",
+    "acId": "7054"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2402",
+    "asmblyNo": "13",
+    "asmblyName": "Purqazi ",
+    "category": "SC",
+    "pcNo": "4",
+    "acId": "7060"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2402",
+    "asmblyNo": "14",
+    "asmblyName": "Muzaffar Nagar",
+    "category": "GEN",
+    "pcNo": "3",
+    "acId": "7055"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2402",
+    "asmblyNo": "15",
+    "asmblyName": "Khatauli",
+    "category": "GEN",
+    "pcNo": "3",
+    "acId": "7056"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2402",
+    "asmblyNo": "16",
+    "asmblyName": "Meerapur",
+    "category": "GEN",
+    "pcNo": "4",
+    "acId": "7059"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2421",
+    "asmblyNo": "17",
+    "asmblyName": "Najibabad",
+    "category": "GEN",
+    "pcNo": "5",
+    "acId": "7064"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2421",
+    "asmblyNo": "18",
+    "asmblyName": "Nagina ",
+    "category": "SC",
+    "pcNo": "5",
+    "acId": "7065"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2421",
+    "asmblyNo": "19",
+    "asmblyName": "Barhapur",
+    "category": "GEN",
+    "pcNo": "6",
+    "acId": "7068"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2421",
+    "asmblyNo": "20",
+    "asmblyName": "Dhampur",
+    "category": "GEN",
+    "pcNo": "5",
+    "acId": "7066"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2421",
+    "asmblyNo": "21",
+    "asmblyName": "Nehtaur",
+    "category": "SC",
+    "pcNo": "5",
+    "acId": "7067"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2421",
+    "asmblyNo": "22",
+    "asmblyName": "Bijnor",
+    "category": "GEN",
+    "pcNo": "4",
+    "acId": "7061"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2421",
+    "asmblyNo": "23",
+    "asmblyName": "Chandpur",
+    "category": "GEN",
+    "pcNo": "4",
+    "acId": "7062"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2421",
+    "asmblyNo": "24",
+    "asmblyName": "Noorpur",
+    "category": "GEN",
+    "pcNo": "5",
+    "acId": "7063"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2419",
+    "asmblyNo": "25",
+    "asmblyName": "Kanth",
+    "category": "GEN",
+    "pcNo": "6",
+    "acId": "7069"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2419",
+    "asmblyNo": "26",
+    "asmblyName": "Thakurdwara",
+    "category": "GEN",
+    "pcNo": "6",
+    "acId": "7070"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2419",
+    "asmblyNo": "27",
+    "asmblyName": "Moradabad Rural",
+    "category": "GEN",
+    "pcNo": "6",
+    "acId": "7071"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2419",
+    "asmblyNo": "28",
+    "asmblyName": "Moradabad Nagar",
+    "category": "GEN",
+    "pcNo": "6",
+    "acId": "7072"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2419",
+    "asmblyNo": "29",
+    "asmblyName": "Kundarki",
+    "category": "GEN",
+    "pcNo": "8",
+    "acId": "7078"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2419",
+    "asmblyNo": "30",
+    "asmblyName": "Bilari",
+    "category": "GEN",
+    "pcNo": "8",
+    "acId": "7079"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2475",
+    "asmblyNo": "31",
+    "asmblyName": "Chandausi ",
+    "category": "SC",
+    "pcNo": "8",
+    "acId": "7080"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2475",
+    "asmblyNo": "32",
+    "asmblyName": "Asmoli",
+    "category": "GEN",
+    "pcNo": "8",
+    "acId": "7081"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2475",
+    "asmblyNo": "33",
+    "asmblyName": "Sambhal",
+    "category": "GEN",
+    "pcNo": "8",
+    "acId": "7082"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2420",
+    "asmblyNo": "34",
+    "asmblyName": "Suar",
+    "category": "GEN",
+    "pcNo": "7",
+    "acId": "7073"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2420",
+    "asmblyNo": "35",
+    "asmblyName": "Chamraua",
+    "category": "GEN",
+    "pcNo": "7",
+    "acId": "7074"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2420",
+    "asmblyNo": "36",
+    "asmblyName": "Bilaspur",
+    "category": "GEN",
+    "pcNo": "7",
+    "acId": "7075"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2420",
+    "asmblyNo": "37",
+    "asmblyName": "Rampur  ",
+    "category": "GEN",
+    "pcNo": "7",
+    "acId": "7076"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2420",
+    "asmblyNo": "38",
+    "asmblyName": "Milak ",
+    "category": "SC",
+    "pcNo": "7",
+    "acId": "7077"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2422",
+    "asmblyNo": "39",
+    "asmblyName": "Dhanaura ",
+    "category": "SC",
+    "pcNo": "9",
+    "acId": "7083"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2422",
+    "asmblyNo": "40",
+    "asmblyName": "Naugawan Sadat",
+    "category": "GEN",
+    "pcNo": "9",
+    "acId": "7084"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2422",
+    "asmblyNo": "41",
+    "asmblyName": "Amroha",
+    "category": "GEN",
+    "pcNo": "9",
+    "acId": "7085"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2422",
+    "asmblyNo": "42",
+    "asmblyName": "Hasanpur",
+    "category": "GEN",
+    "pcNo": "9",
+    "acId": "7086"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2403",
+    "asmblyNo": "43",
+    "asmblyName": "Siwalkhas",
+    "category": "GEN",
+    "pcNo": "11",
+    "acId": "7097"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2403",
+    "asmblyNo": "44",
+    "asmblyName": "Sardhana",
+    "category": "GEN",
+    "pcNo": "3",
+    "acId": "7057"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2403",
+    "asmblyNo": "45",
+    "asmblyName": "Hastinapur ",
+    "category": "SC",
+    "pcNo": "4",
+    "acId": "7058"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2403",
+    "asmblyNo": "46",
+    "asmblyName": "Kithore",
+    "category": "GEN",
+    "pcNo": "10",
+    "acId": "7088"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2403",
+    "asmblyNo": "47",
+    "asmblyName": "Meerut Cantt.",
+    "category": "GEN",
+    "pcNo": "10",
+    "acId": "7089"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2403",
+    "asmblyNo": "48",
+    "asmblyName": "Meerut  ",
+    "category": "GEN",
+    "pcNo": "10",
+    "acId": "7090"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2403",
+    "asmblyNo": "49",
+    "asmblyName": "Meerut South",
+    "category": "GEN",
+    "pcNo": "10",
+    "acId": "7091"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2407",
+    "asmblyNo": "50",
+    "asmblyName": "Chhaprauli",
+    "category": "GEN",
+    "pcNo": "11",
+    "acId": "7094"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2407",
+    "asmblyNo": "51",
+    "asmblyName": "Baraut",
+    "category": "GEN",
+    "pcNo": "11",
+    "acId": "7095"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2407",
+    "asmblyNo": "52",
+    "asmblyName": "Baghpat",
+    "category": "GEN",
+    "pcNo": "11",
+    "acId": "7096"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2404",
+    "asmblyNo": "53",
+    "asmblyName": "Loni",
+    "category": "GEN",
+    "pcNo": "12",
+    "acId": "7098"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2404",
+    "asmblyNo": "54",
+    "asmblyName": "Muradnagar",
+    "category": "GEN",
+    "pcNo": "12",
+    "acId": "7099"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2404",
+    "asmblyNo": "55",
+    "asmblyName": "Sahibabad",
+    "category": "GEN",
+    "pcNo": "12",
+    "acId": "7100"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2404",
+    "asmblyNo": "56",
+    "asmblyName": "Ghaziabad",
+    "category": "GEN",
+    "pcNo": "12",
+    "acId": "7101"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2404",
+    "asmblyNo": "57",
+    "asmblyName": "Modi Nagar",
+    "category": "GEN",
+    "pcNo": "11",
+    "acId": "7093"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2473",
+    "asmblyNo": "58",
+    "asmblyName": "Dholana",
+    "category": "GEN",
+    "pcNo": "12",
+    "acId": "7102"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2473",
+    "asmblyNo": "59",
+    "asmblyName": "Hapur ",
+    "category": "SC",
+    "pcNo": "10",
+    "acId": "7092"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2473",
+    "asmblyNo": "60",
+    "asmblyName": "Garhmukteshwar",
+    "category": "GEN",
+    "pcNo": "9",
+    "acId": "7087"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2406",
+    "asmblyNo": "61",
+    "asmblyName": "Noida",
+    "category": "GEN",
+    "pcNo": "13",
+    "acId": "7104"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2406",
+    "asmblyNo": "62",
+    "asmblyName": "Dadri",
+    "category": "GEN",
+    "pcNo": "13",
+    "acId": "7105"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2406",
+    "asmblyNo": "63",
+    "asmblyName": "Jewar",
+    "category": "GEN",
+    "pcNo": "13",
+    "acId": "7106"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2405",
+    "asmblyNo": "64",
+    "asmblyName": "Sikandrabad",
+    "category": "GEN",
+    "pcNo": "13",
+    "acId": "7107"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2405",
+    "asmblyNo": "65",
+    "asmblyName": "Bulandshahr",
+    "category": "GEN",
+    "pcNo": "14",
+    "acId": "7108"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2405",
+    "asmblyNo": "66",
+    "asmblyName": "Syana",
+    "category": "GEN",
+    "pcNo": "14",
+    "acId": "7109"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2405",
+    "asmblyNo": "67",
+    "asmblyName": "Anupshahr",
+    "category": "GEN",
+    "pcNo": "14",
+    "acId": "7110"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2405",
+    "asmblyNo": "68",
+    "asmblyName": "Debai",
+    "category": "GEN",
+    "pcNo": "14",
+    "acId": "7111"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2405",
+    "asmblyNo": "69",
+    "asmblyName": "Shikarpur",
+    "category": "GEN",
+    "pcNo": "14",
+    "acId": "7112"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2405",
+    "asmblyNo": "70",
+    "asmblyName": "Khurja ",
+    "category": "SC",
+    "pcNo": "13",
+    "acId": "7103"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2409",
+    "asmblyNo": "71",
+    "asmblyName": "Khair ",
+    "category": "SC",
+    "pcNo": "15",
+    "acId": "7115"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2409",
+    "asmblyNo": "72",
+    "asmblyName": "Barauli",
+    "category": "GEN",
+    "pcNo": "15",
+    "acId": "7116"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2409",
+    "asmblyNo": "73",
+    "asmblyName": "Atrauli",
+    "category": "GEN",
+    "pcNo": "15",
+    "acId": "7117"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2409",
+    "asmblyNo": "74",
+    "asmblyName": "Chharra",
+    "category": "GEN",
+    "pcNo": "16",
+    "acId": "7118"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2409",
+    "asmblyNo": "75",
+    "asmblyName": "Koil",
+    "category": "GEN",
+    "pcNo": "15",
+    "acId": "7113"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2409",
+    "asmblyNo": "76",
+    "asmblyName": "Aligarh",
+    "category": "GEN",
+    "pcNo": "15",
+    "acId": "7114"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2409",
+    "asmblyNo": "77",
+    "asmblyName": "Iglas ",
+    "category": "SC",
+    "pcNo": "16",
+    "acId": "7119"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2414",
+    "asmblyNo": "78",
+    "asmblyName": "Hathras ",
+    "category": "SC",
+    "pcNo": "16",
+    "acId": "7120"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2414",
+    "asmblyNo": "79",
+    "asmblyName": "Sadabad",
+    "category": "GEN",
+    "pcNo": "16",
+    "acId": "7121"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2414",
+    "asmblyNo": "80",
+    "asmblyName": "Sikandra Rao",
+    "category": "GEN",
+    "pcNo": "16",
+    "acId": "7122"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2410",
+    "asmblyNo": "81",
+    "asmblyName": "Chhata",
+    "category": "GEN",
+    "pcNo": "17",
+    "acId": "7123"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2410",
+    "asmblyNo": "82",
+    "asmblyName": "Mant",
+    "category": "GEN",
+    "pcNo": "17",
+    "acId": "7124"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2410",
+    "asmblyNo": "83",
+    "asmblyName": "Goverdhan",
+    "category": "GEN",
+    "pcNo": "17",
+    "acId": "7125"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2410",
+    "asmblyNo": "84",
+    "asmblyName": "Mathura",
+    "category": "GEN",
+    "pcNo": "17",
+    "acId": "7126"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2410",
+    "asmblyNo": "85",
+    "asmblyName": "Baldev ",
+    "category": "SC",
+    "pcNo": "17",
+    "acId": "7127"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2408",
+    "asmblyNo": "86",
+    "asmblyName": "Etmadpur",
+    "category": "GEN",
+    "pcNo": "18",
+    "acId": "7128"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2408",
+    "asmblyNo": "87",
+    "asmblyName": "Agra Cantt. ",
+    "category": "SC",
+    "pcNo": "18",
+    "acId": "7129"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2408",
+    "asmblyNo": "88",
+    "asmblyName": "Agra South",
+    "category": "GEN",
+    "pcNo": "18",
+    "acId": "7130"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2408",
+    "asmblyNo": "89",
+    "asmblyName": "Agra North",
+    "category": "GEN",
+    "pcNo": "18",
+    "acId": "7131"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2408",
+    "asmblyNo": "90",
+    "asmblyName": "Agra Rural ",
+    "category": "SC",
+    "pcNo": "19",
+    "acId": "7133"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2408",
+    "asmblyNo": "91",
+    "asmblyName": "Fatehpur Sikri",
+    "category": "GEN",
+    "pcNo": "19",
+    "acId": "7134"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2408",
+    "asmblyNo": "92",
+    "asmblyName": "Kheragarh",
+    "category": "GEN",
+    "pcNo": "19",
+    "acId": "7135"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2408",
+    "asmblyNo": "93",
+    "asmblyName": "Fatehabad",
+    "category": "GEN",
+    "pcNo": "19",
+    "acId": "7136"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2408",
+    "asmblyNo": "94",
+    "asmblyName": "Bah",
+    "category": "GEN",
+    "pcNo": "19",
+    "acId": "7137"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2411",
+    "asmblyNo": "95",
+    "asmblyName": "Tundla ",
+    "category": "SC",
+    "pcNo": "20",
+    "acId": "7138"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2411",
+    "asmblyNo": "96",
+    "asmblyName": "Jasrana",
+    "category": "GEN",
+    "pcNo": "20",
+    "acId": "7139"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2411",
+    "asmblyNo": "97",
+    "asmblyName": "Firozabad",
+    "category": "GEN",
+    "pcNo": "20",
+    "acId": "7140"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2411",
+    "asmblyNo": "98",
+    "asmblyName": "Shikohabad",
+    "category": "GEN",
+    "pcNo": "20",
+    "acId": "7141"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2411",
+    "asmblyNo": "99",
+    "asmblyName": "Sirsaganj",
+    "category": "GEN",
+    "pcNo": "20",
+    "acId": "7142"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2471",
+    "asmblyNo": "100",
+    "asmblyName": "Kasganj",
+    "category": "GEN",
+    "pcNo": "22",
+    "acId": "7150"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2471",
+    "asmblyNo": "101",
+    "asmblyName": "Amanpur",
+    "category": "GEN",
+    "pcNo": "22",
+    "acId": "7151"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2471",
+    "asmblyNo": "102",
+    "asmblyName": "Patiyali",
+    "category": "GEN",
+    "pcNo": "22",
+    "acId": "7152"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2413",
+    "asmblyNo": "103",
+    "asmblyName": "Aliganj",
+    "category": "GEN",
+    "pcNo": "40",
+    "acId": "7244"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2413",
+    "asmblyNo": "104",
+    "asmblyName": "Etah",
+    "category": "GEN",
+    "pcNo": "22",
+    "acId": "7148"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2413",
+    "asmblyNo": "105",
+    "asmblyName": "Marhara",
+    "category": "GEN",
+    "pcNo": "22",
+    "acId": "7149"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2413",
+    "asmblyNo": "106",
+    "asmblyName": "Jalesar ",
+    "category": "SC",
+    "pcNo": "18",
+    "acId": "7132"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2412",
+    "asmblyNo": "107",
+    "asmblyName": "Mainpuri",
+    "category": "GEN",
+    "pcNo": "21",
+    "acId": "7143"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2412",
+    "asmblyNo": "108",
+    "asmblyName": "Bhongaon",
+    "category": "GEN",
+    "pcNo": "21",
+    "acId": "7144"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2412",
+    "asmblyNo": "109",
+    "asmblyName": "Kishani ",
+    "category": "SC",
+    "pcNo": "21",
+    "acId": "7145"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2412",
+    "asmblyNo": "110",
+    "asmblyName": "Karhal",
+    "category": "GEN",
+    "pcNo": "21",
+    "acId": "7146"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2475",
+    "asmblyNo": "111",
+    "asmblyName": "Gunnaur",
+    "category": "GEN",
+    "pcNo": "23",
+    "acId": "7153"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2416",
+    "asmblyNo": "112",
+    "asmblyName": "Bisauli ",
+    "category": "SC",
+    "pcNo": "23",
+    "acId": "7154"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2416",
+    "asmblyNo": "113",
+    "asmblyName": "Sahaswan",
+    "category": "GEN",
+    "pcNo": "23",
+    "acId": "7155"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2416",
+    "asmblyNo": "114",
+    "asmblyName": "Bilsi",
+    "category": "GEN",
+    "pcNo": "23",
+    "acId": "7156"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2416",
+    "asmblyNo": "115",
+    "asmblyName": "Badaun",
+    "category": "GEN",
+    "pcNo": "23",
+    "acId": "7157"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2416",
+    "asmblyNo": "116",
+    "asmblyName": "Shekhupur",
+    "category": "GEN",
+    "pcNo": "24",
+    "acId": "7158"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2416",
+    "asmblyNo": "117",
+    "asmblyName": "Dataganj",
+    "category": "GEN",
+    "pcNo": "24",
+    "acId": "7159"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2415",
+    "asmblyNo": "118",
+    "asmblyName": "Baheri",
+    "category": "GEN",
+    "pcNo": "26",
+    "acId": "7172"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2415",
+    "asmblyNo": "119",
+    "asmblyName": "Meerganj",
+    "category": "GEN",
+    "pcNo": "25",
+    "acId": "7165"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2415",
+    "asmblyNo": "120",
+    "asmblyName": "Bhojipura",
+    "category": "GEN",
+    "pcNo": "25",
+    "acId": "7166"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2415",
+    "asmblyNo": "121",
+    "asmblyName": "Nawabganj",
+    "category": "GEN",
+    "pcNo": "25",
+    "acId": "7167"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2415",
+    "asmblyNo": "122",
+    "asmblyName": "Faridpur",
+    "category": "SC",
+    "pcNo": "24",
+    "acId": "7161"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2415",
+    "asmblyNo": "123",
+    "asmblyName": "Bithari Chainpur",
+    "category": "GEN",
+    "pcNo": "24",
+    "acId": "7162"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2415",
+    "asmblyNo": "124",
+    "asmblyName": "Bareilly",
+    "category": "GEN",
+    "pcNo": "25",
+    "acId": "7163"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2415",
+    "asmblyNo": "125",
+    "asmblyName": "Bareilly Cantt.",
+    "category": "GEN",
+    "pcNo": "25",
+    "acId": "7164"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2415",
+    "asmblyNo": "126",
+    "asmblyName": "Aonla",
+    "category": "GEN",
+    "pcNo": "24",
+    "acId": "7160"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2418",
+    "asmblyNo": "127",
+    "asmblyName": "Pilibhit",
+    "category": "GEN",
+    "pcNo": "26",
+    "acId": "7168"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2418",
+    "asmblyNo": "128",
+    "asmblyName": "Barkhera",
+    "category": "GEN",
+    "pcNo": "26",
+    "acId": "7169"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2418",
+    "asmblyNo": "129",
+    "asmblyName": "Puranpur",
+    "category": "SC",
+    "pcNo": "26",
+    "acId": "7170"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2418",
+    "asmblyNo": "130",
+    "asmblyName": "Bisalpur",
+    "category": "GEN",
+    "pcNo": "26",
+    "acId": "7171"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2417",
+    "asmblyNo": "131",
+    "asmblyName": "Katra",
+    "category": "GEN",
+    "pcNo": "27",
+    "acId": "7173"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2417",
+    "asmblyNo": "132",
+    "asmblyName": "Jalalabad",
+    "category": "GEN",
+    "pcNo": "27",
+    "acId": "7174"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2417",
+    "asmblyNo": "133",
+    "asmblyName": "Tilhar",
+    "category": "GEN",
+    "pcNo": "27",
+    "acId": "7175"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2417",
+    "asmblyNo": "134",
+    "asmblyName": "Powayan",
+    "category": "SC",
+    "pcNo": "27",
+    "acId": "7176"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2417",
+    "asmblyNo": "135",
+    "asmblyName": "Shahjahanpur",
+    "category": "GEN",
+    "pcNo": "27",
+    "acId": "7177"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2417",
+    "asmblyNo": "136",
+    "asmblyName": "Dadraul",
+    "category": "GEN",
+    "pcNo": "27",
+    "acId": "7178"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2462",
+    "asmblyNo": "137",
+    "asmblyName": "Palia",
+    "category": "GEN",
+    "pcNo": "28",
+    "acId": "7179"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2462",
+    "asmblyNo": "138",
+    "asmblyName": "Nighasan",
+    "category": "GEN",
+    "pcNo": "28",
+    "acId": "7180"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2462",
+    "asmblyNo": "139",
+    "asmblyName": "Gola Gokrannath",
+    "category": "GEN",
+    "pcNo": "28",
+    "acId": "7181"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2462",
+    "asmblyNo": "140",
+    "asmblyName": "Sri Nagar (SC)",
+    "category": "SC",
+    "pcNo": "28",
+    "acId": "7182"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2462",
+    "asmblyNo": "141",
+    "asmblyName": "Dhaurahra",
+    "category": "GEN",
+    "pcNo": "29",
+    "acId": "7188"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2462",
+    "asmblyNo": "142",
+    "asmblyName": "Lakhimpur",
+    "category": "GEN",
+    "pcNo": "28",
+    "acId": "7183"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2462",
+    "asmblyNo": "143",
+    "asmblyName": "Kasta ",
+    "category": "SC",
+    "pcNo": "29",
+    "acId": "7184"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2462",
+    "asmblyNo": "144",
+    "asmblyName": "Mohammdi",
+    "category": "GEN",
+    "pcNo": "29",
+    "acId": "7185"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2460",
+    "asmblyNo": "145",
+    "asmblyName": "Maholi",
+    "category": "GEN",
+    "pcNo": "29",
+    "acId": "7186"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2460",
+    "asmblyNo": "146",
+    "asmblyName": "Sitapur",
+    "category": "GEN",
+    "pcNo": "30",
+    "acId": "7193"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2460",
+    "asmblyNo": "147",
+    "asmblyName": "Hargaon ",
+    "category": "SC",
+    "pcNo": "29",
+    "acId": "7187"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2460",
+    "asmblyNo": "148",
+    "asmblyName": "Laharpur",
+    "category": "GEN",
+    "pcNo": "30",
+    "acId": "7189"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2460",
+    "asmblyNo": "149",
+    "asmblyName": "Biswan",
+    "category": "GEN",
+    "pcNo": "30",
+    "acId": "7190"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2460",
+    "asmblyNo": "150",
+    "asmblyName": "Sevata",
+    "category": "GEN",
+    "pcNo": "30",
+    "acId": "7191"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2460",
+    "asmblyNo": "151",
+    "asmblyName": "Mahmoodabad",
+    "category": "GEN",
+    "pcNo": "30",
+    "acId": "7192"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2460",
+    "asmblyNo": "152",
+    "asmblyName": "Sidhauli ",
+    "category": "SC",
+    "pcNo": "34",
+    "acId": "7213"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2460",
+    "asmblyNo": "153",
+    "asmblyName": "Misrikh ",
+    "category": "SC",
+    "pcNo": "32",
+    "acId": "7202"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2461",
+    "asmblyNo": "154",
+    "asmblyName": "Sawaijpur",
+    "category": "GEN",
+    "pcNo": "31",
+    "acId": "7194"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2461",
+    "asmblyNo": "155",
+    "asmblyName": "Shahabad",
+    "category": "GEN",
+    "pcNo": "31",
+    "acId": "7195"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2461",
+    "asmblyNo": "156",
+    "asmblyName": "Hardoi",
+    "category": "GEN",
+    "pcNo": "31",
+    "acId": "7196"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2461",
+    "asmblyNo": "157",
+    "asmblyName": "Gopamau ",
+    "category": "SC",
+    "pcNo": "31",
+    "acId": "7197"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2461",
+    "asmblyNo": "158",
+    "asmblyName": "Sandi ",
+    "category": "SC",
+    "pcNo": "31",
+    "acId": "7198"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2461",
+    "asmblyNo": "159",
+    "asmblyName": "Bilgram-Mallanwan",
+    "category": "GEN",
+    "pcNo": "32",
+    "acId": "7199"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2461",
+    "asmblyNo": "160",
+    "asmblyName": "Balamau ",
+    "category": "SC",
+    "pcNo": "32",
+    "acId": "7200"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2461",
+    "asmblyNo": "161",
+    "asmblyName": "Sandila",
+    "category": "GEN",
+    "pcNo": "32",
+    "acId": "7201"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2458",
+    "asmblyNo": "162",
+    "asmblyName": "Bangermau",
+    "category": "GEN",
+    "pcNo": "33",
+    "acId": "7204"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2458",
+    "asmblyNo": "163",
+    "asmblyName": "Safipur ",
+    "category": "SC",
+    "pcNo": "33",
+    "acId": "7205"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2458",
+    "asmblyNo": "164",
+    "asmblyName": "Mohan ",
+    "category": "SC",
+    "pcNo": "33",
+    "acId": "7206"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2458",
+    "asmblyNo": "165",
+    "asmblyName": "Unnao",
+    "category": "GEN",
+    "pcNo": "33",
+    "acId": "7207"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2458",
+    "asmblyNo": "166",
+    "asmblyName": "Bhagwantnagar",
+    "category": "GEN",
+    "pcNo": "33",
+    "acId": "7208"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2458",
+    "asmblyNo": "167",
+    "asmblyName": "Purwa",
+    "category": "GEN",
+    "pcNo": "33",
+    "acId": "7209"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2457",
+    "asmblyNo": "168",
+    "asmblyName": "Malihabad",
+    "category": "SC",
+    "pcNo": "34",
+    "acId": "7210"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2457",
+    "asmblyNo": "169",
+    "asmblyName": "Bakshi Kaa Talab",
+    "category": "GEN",
+    "pcNo": "34",
+    "acId": "7211"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2457",
+    "asmblyNo": "170",
+    "asmblyName": "Sarojini Nagar",
+    "category": "GEN",
+    "pcNo": "34",
+    "acId": "7212"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2457",
+    "asmblyNo": "171",
+    "asmblyName": "Lucknow West",
+    "category": "GEN",
+    "pcNo": "35",
+    "acId": "7215"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2457",
+    "asmblyNo": "172",
+    "asmblyName": "Lucknow North",
+    "category": "GEN",
+    "pcNo": "35",
+    "acId": "7216"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2457",
+    "asmblyNo": "173",
+    "asmblyName": "Lucknow East",
+    "category": "GEN",
+    "pcNo": "35",
+    "acId": "7217"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2457",
+    "asmblyNo": "174",
+    "asmblyName": "Lucknow Central",
+    "category": "GEN",
+    "pcNo": "35",
+    "acId": "7218"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2457",
+    "asmblyNo": "175",
+    "asmblyName": "Lucknow Cantt.",
+    "category": "GEN",
+    "pcNo": "35",
+    "acId": "7219"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2457",
+    "asmblyNo": "176",
+    "asmblyName": "Mohanlalganj ",
+    "category": "SC",
+    "pcNo": "34",
+    "acId": "7214"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2459",
+    "asmblyNo": "177",
+    "asmblyName": "Bachhrawan ",
+    "category": "SC",
+    "pcNo": "36",
+    "acId": "7220"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2472",
+    "asmblyNo": "178",
+    "asmblyName": "Tiloi",
+    "category": "GEN",
+    "pcNo": "37",
+    "acId": "7229"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2459",
+    "asmblyNo": "179",
+    "asmblyName": "Harchandpur",
+    "category": "GEN",
+    "pcNo": "36",
+    "acId": "7221"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2459",
+    "asmblyNo": "180",
+    "asmblyName": "Rae Bareli",
+    "category": "GEN",
+    "pcNo": "36",
+    "acId": "7222"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2459",
+    "asmblyNo": "181",
+    "asmblyName": "Salon ",
+    "category": "SC",
+    "pcNo": "37",
+    "acId": "7228"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2459",
+    "asmblyNo": "182",
+    "asmblyName": "Sareni",
+    "category": "GEN",
+    "pcNo": "36",
+    "acId": "7223"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2459",
+    "asmblyNo": "183",
+    "asmblyName": "Unchahar",
+    "category": "GEN",
+    "pcNo": "36",
+    "acId": "7224"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2472",
+    "asmblyNo": "184",
+    "asmblyName": "Jagdishpur ",
+    "category": "SC",
+    "pcNo": "37",
+    "acId": "7225"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2472",
+    "asmblyNo": "185",
+    "asmblyName": "Gauriganj",
+    "category": "GEN",
+    "pcNo": "37",
+    "acId": "7226"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2472",
+    "asmblyNo": "186",
+    "asmblyName": "Amethi",
+    "category": "GEN",
+    "pcNo": "37",
+    "acId": "7227"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2468",
+    "asmblyNo": "187",
+    "asmblyName": "Isauli",
+    "category": "GEN",
+    "pcNo": "38",
+    "acId": "7230"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2468",
+    "asmblyNo": "188",
+    "asmblyName": "Sultanpur",
+    "category": "GEN",
+    "pcNo": "38",
+    "acId": "7231"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2468",
+    "asmblyNo": "189",
+    "asmblyName": "Sadar",
+    "category": "GEN",
+    "pcNo": "38",
+    "acId": "7232"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2468",
+    "asmblyNo": "190",
+    "asmblyName": "Lambhua",
+    "category": "GEN",
+    "pcNo": "38",
+    "acId": "7233"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2468",
+    "asmblyNo": "191",
+    "asmblyName": "Kadipur ",
+    "category": "SC",
+    "pcNo": "38",
+    "acId": "7234"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2426",
+    "asmblyNo": "192",
+    "asmblyName": "Kaimganj ",
+    "category": "SC",
+    "pcNo": "40",
+    "acId": "7240"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2426",
+    "asmblyNo": "193",
+    "asmblyName": "Amritpur",
+    "category": "GEN",
+    "pcNo": "40",
+    "acId": "7241"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2426",
+    "asmblyNo": "194",
+    "asmblyName": "Farrukhabad",
+    "category": "GEN",
+    "pcNo": "40",
+    "acId": "7242"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2426",
+    "asmblyNo": "195",
+    "asmblyName": "Bhojpur",
+    "category": "GEN",
+    "pcNo": "40",
+    "acId": "7243"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2427",
+    "asmblyNo": "196",
+    "asmblyName": "Chhibramau",
+    "category": "GEN",
+    "pcNo": "42",
+    "acId": "7252"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2427",
+    "asmblyNo": "197",
+    "asmblyName": "Tirwa",
+    "category": "GEN",
+    "pcNo": "42",
+    "acId": "7253"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2427",
+    "asmblyNo": "198",
+    "asmblyName": "Kannauj ",
+    "category": "SC",
+    "pcNo": "42",
+    "acId": "7254"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2425",
+    "asmblyNo": "199",
+    "asmblyName": "Jaswantnagar",
+    "category": "GEN",
+    "pcNo": "21",
+    "acId": "7147"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2425",
+    "asmblyNo": "200",
+    "asmblyName": "Etawah",
+    "category": "GEN",
+    "pcNo": "41",
+    "acId": "7245"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2425",
+    "asmblyNo": "201",
+    "asmblyName": "Bharthana ",
+    "category": "SC",
+    "pcNo": "41",
+    "acId": "7246"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2428",
+    "asmblyNo": "202",
+    "asmblyName": "Bidhuna",
+    "category": "GEN",
+    "pcNo": "42",
+    "acId": "7251"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2428",
+    "asmblyNo": "203",
+    "asmblyName": "Dibiyapur",
+    "category": "GEN",
+    "pcNo": "41",
+    "acId": "7248"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2428",
+    "asmblyNo": "204",
+    "asmblyName": "Auraiya ",
+    "category": "SC",
+    "pcNo": "41",
+    "acId": "7249"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2424",
+    "asmblyNo": "205",
+    "asmblyName": "Rasulabad ",
+    "category": "SC",
+    "pcNo": "42",
+    "acId": "7250"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2424",
+    "asmblyNo": "206",
+    "asmblyName": "Akbarpur - Raniya",
+    "category": "GEN",
+    "pcNo": "44",
+    "acId": "7262"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2424",
+    "asmblyNo": "207",
+    "asmblyName": "Sikandra",
+    "category": "GEN",
+    "pcNo": "41",
+    "acId": "7247"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2424",
+    "asmblyNo": "208",
+    "asmblyName": "Bhognipur",
+    "category": "GEN",
+    "pcNo": "45",
+    "acId": "7265"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2423",
+    "asmblyNo": "209",
+    "asmblyName": "Bilhaur",
+    "category": "SC",
+    "pcNo": "32",
+    "acId": "7203"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2423",
+    "asmblyNo": "210",
+    "asmblyName": "Bithoor",
+    "category": "GEN",
+    "pcNo": "44",
+    "acId": "7263"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2423",
+    "asmblyNo": "211",
+    "asmblyName": "Kalyanpur",
+    "category": "GEN",
+    "pcNo": "44",
+    "acId": "7264"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2423",
+    "asmblyNo": "212",
+    "asmblyName": "Govindnagar",
+    "category": "GEN",
+    "pcNo": "43",
+    "acId": "7255"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2423",
+    "asmblyNo": "213",
+    "asmblyName": "Sishamau",
+    "category": "GEN",
+    "pcNo": "43",
+    "acId": "7256"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2423",
+    "asmblyNo": "214",
+    "asmblyName": "Arya Nagar",
+    "category": "GEN",
+    "pcNo": "43",
+    "acId": "7257"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2423",
+    "asmblyNo": "215",
+    "asmblyName": "Kidwai Nagar",
+    "category": "GEN",
+    "pcNo": "43",
+    "acId": "7258"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2423",
+    "asmblyNo": "216",
+    "asmblyName": "Kanpur Cantt.",
+    "category": "GEN",
+    "pcNo": "43",
+    "acId": "7259"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2423",
+    "asmblyNo": "217",
+    "asmblyName": "Maharajpur",
+    "category": "GEN",
+    "pcNo": "44",
+    "acId": "7260"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2423",
+    "asmblyNo": "218",
+    "asmblyName": "Ghatampur ",
+    "category": "SC",
+    "pcNo": "44",
+    "acId": "7261"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2435",
+    "asmblyNo": "219",
+    "asmblyName": "Madhaugarh",
+    "category": "GEN",
+    "pcNo": "45",
+    "acId": "7266"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2435",
+    "asmblyNo": "220",
+    "asmblyName": "Kalpi",
+    "category": "GEN",
+    "pcNo": "45",
+    "acId": "7267"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2435",
+    "asmblyNo": "221",
+    "asmblyName": "Orai ",
+    "category": "SC",
+    "pcNo": "45",
+    "acId": "7268"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2433",
+    "asmblyNo": "222",
+    "asmblyName": "Babina",
+    "category": "GEN",
+    "pcNo": "46",
+    "acId": "7272"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2433",
+    "asmblyNo": "223",
+    "asmblyName": "Jhansi Nagar",
+    "category": "GEN",
+    "pcNo": "46",
+    "acId": "7273"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2433",
+    "asmblyNo": "224",
+    "asmblyName": "Mauranipur ",
+    "category": "SC",
+    "pcNo": "46",
+    "acId": "7274"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2433",
+    "asmblyNo": "225",
+    "asmblyName": "Garautha",
+    "category": "GEN",
+    "pcNo": "45",
+    "acId": "7269"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2434",
+    "asmblyNo": "226",
+    "asmblyName": "Lalitpur",
+    "category": "GEN",
+    "pcNo": "46",
+    "acId": "7270"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2434",
+    "asmblyNo": "227",
+    "asmblyName": "Mehroni ",
+    "category": "SC",
+    "pcNo": "46",
+    "acId": "7271"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2436",
+    "asmblyNo": "228",
+    "asmblyName": "Hamirpur",
+    "category": "GEN",
+    "pcNo": "47",
+    "acId": "7275"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2436",
+    "asmblyNo": "229",
+    "asmblyName": "Rath ",
+    "category": "SC",
+    "pcNo": "47",
+    "acId": "7276"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2437",
+    "asmblyNo": "230",
+    "asmblyName": "Mahoba",
+    "category": "GEN",
+    "pcNo": "47",
+    "acId": "7277"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2437",
+    "asmblyNo": "231",
+    "asmblyName": "Charkhari",
+    "category": "GEN",
+    "pcNo": "47",
+    "acId": "7278"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2438",
+    "asmblyNo": "232",
+    "asmblyName": "Tindwari",
+    "category": "GEN",
+    "pcNo": "47",
+    "acId": "7279"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2438",
+    "asmblyNo": "233",
+    "asmblyName": "Baberu",
+    "category": "GEN",
+    "pcNo": "48",
+    "acId": "7280"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2438",
+    "asmblyNo": "234",
+    "asmblyName": "Naraini ",
+    "category": "SC",
+    "pcNo": "48",
+    "acId": "7281"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2438",
+    "asmblyNo": "235",
+    "asmblyName": "Banda",
+    "category": "GEN",
+    "pcNo": "48",
+    "acId": "7282"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2439",
+    "asmblyNo": "236",
+    "asmblyName": "Chitrakoot",
+    "category": "GEN",
+    "pcNo": "48",
+    "acId": "7283"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2439",
+    "asmblyNo": "237",
+    "asmblyName": "Manikpur",
+    "category": "GEN",
+    "pcNo": "48",
+    "acId": "7284"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2430",
+    "asmblyNo": "238",
+    "asmblyName": "Jahanabad",
+    "category": "GEN",
+    "pcNo": "49",
+    "acId": "7285"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2430",
+    "asmblyNo": "239",
+    "asmblyName": "Bindki",
+    "category": "GEN",
+    "pcNo": "49",
+    "acId": "7286"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2430",
+    "asmblyNo": "240",
+    "asmblyName": "Fatehpur   ",
+    "category": "GEN",
+    "pcNo": "49",
+    "acId": "7287"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2430",
+    "asmblyNo": "241",
+    "asmblyName": "Ayah Shah",
+    "category": "GEN",
+    "pcNo": "49",
+    "acId": "7288"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2430",
+    "asmblyNo": "242",
+    "asmblyName": "Husainganj",
+    "category": "GEN",
+    "pcNo": "49",
+    "acId": "7289"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2430",
+    "asmblyNo": "243",
+    "asmblyName": "Khaga",
+    "category": "SC",
+    "pcNo": "49",
+    "acId": "7290"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2431",
+    "asmblyNo": "244",
+    "asmblyName": "Rampur Khas",
+    "category": "GEN",
+    "pcNo": "39",
+    "acId": "7239"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2431",
+    "asmblyNo": "245",
+    "asmblyName": "Babaganj",
+    "category": "SC",
+    "pcNo": "50",
+    "acId": "7294"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2431",
+    "asmblyNo": "246",
+    "asmblyName": "Kunda",
+    "category": "GEN",
+    "pcNo": "50",
+    "acId": "7295"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2431",
+    "asmblyNo": "247",
+    "asmblyName": "Vishwanath Ganj",
+    "category": "GEN",
+    "pcNo": "39",
+    "acId": "7235"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2431",
+    "asmblyNo": "248",
+    "asmblyName": "Pratapgarh",
+    "category": "GEN",
+    "pcNo": "39",
+    "acId": "7236"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2431",
+    "asmblyNo": "249",
+    "asmblyName": "Patti",
+    "category": "GEN",
+    "pcNo": "39",
+    "acId": "7237"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2431",
+    "asmblyNo": "250",
+    "asmblyName": "Raniganj",
+    "category": "GEN",
+    "pcNo": "39",
+    "acId": "7238"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2432",
+    "asmblyNo": "251",
+    "asmblyName": "Sirathu",
+    "category": "GEN",
+    "pcNo": "50",
+    "acId": "7291"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2432",
+    "asmblyNo": "252",
+    "asmblyName": "Manjhanpur ",
+    "category": "SC",
+    "pcNo": "50",
+    "acId": "7292"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2432",
+    "asmblyNo": "253",
+    "asmblyName": "Chail",
+    "category": "GEN",
+    "pcNo": "50",
+    "acId": "7293"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2429",
+    "asmblyNo": "254",
+    "asmblyName": "Phaphamau",
+    "category": "GEN",
+    "pcNo": "51",
+    "acId": "7298"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2429",
+    "asmblyNo": "255",
+    "asmblyName": "Soraon ",
+    "category": "SC",
+    "pcNo": "51",
+    "acId": "7299"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2429",
+    "asmblyNo": "256",
+    "asmblyName": "Phulpur",
+    "category": "GEN",
+    "pcNo": "51",
+    "acId": "7300"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2429",
+    "asmblyNo": "257",
+    "asmblyName": "Pratappur",
+    "category": "GEN",
+    "pcNo": "78",
+    "acId": "7434"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2429",
+    "asmblyNo": "258",
+    "asmblyName": "Handia",
+    "category": "GEN",
+    "pcNo": "78",
+    "acId": "7435"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2429",
+    "asmblyNo": "259",
+    "asmblyName": "Meja",
+    "category": "GEN",
+    "pcNo": "52",
+    "acId": "7304"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2429",
+    "asmblyNo": "260",
+    "asmblyName": "Karachhana",
+    "category": "GEN",
+    "pcNo": "52",
+    "acId": "7305"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2429",
+    "asmblyNo": "261",
+    "asmblyName": "Allahabad West",
+    "category": "GEN",
+    "pcNo": "51",
+    "acId": "7296"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2429",
+    "asmblyNo": "262",
+    "asmblyName": "Allahabad North",
+    "category": "GEN",
+    "pcNo": "51",
+    "acId": "7297"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2429",
+    "asmblyNo": "263",
+    "asmblyName": "Allahabad South",
+    "category": "GEN",
+    "pcNo": "52",
+    "acId": "7301"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2429",
+    "asmblyNo": "264",
+    "asmblyName": "Bara ",
+    "category": "SC",
+    "pcNo": "52",
+    "acId": "7302"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2429",
+    "asmblyNo": "265",
+    "asmblyName": "Koraon ",
+    "category": "SC",
+    "pcNo": "52",
+    "acId": "7303"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2469",
+    "asmblyNo": "266",
+    "asmblyName": "Kursi",
+    "category": "GEN",
+    "pcNo": "53",
+    "acId": "7306"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2469",
+    "asmblyNo": "267",
+    "asmblyName": "Ram Nagar",
+    "category": "GEN",
+    "pcNo": "53",
+    "acId": "7307"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2469",
+    "asmblyNo": "268",
+    "asmblyName": "Barabanki",
+    "category": "GEN",
+    "pcNo": "53",
+    "acId": "7308"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2469",
+    "asmblyNo": "269",
+    "asmblyName": "Zaidpur ",
+    "category": "SC",
+    "pcNo": "53",
+    "acId": "7309"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2469",
+    "asmblyNo": "270",
+    "asmblyName": "Dariyabad",
+    "category": "GEN",
+    "pcNo": "54",
+    "acId": "7314"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2467",
+    "asmblyNo": "271",
+    "asmblyName": "Rudauli",
+    "category": "GEN",
+    "pcNo": "54",
+    "acId": "7315"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2469",
+    "asmblyNo": "272",
+    "asmblyName": "Haidergarh ",
+    "category": "SC",
+    "pcNo": "53",
+    "acId": "7310"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2467",
+    "asmblyNo": "273",
+    "asmblyName": "Milkipur ",
+    "category": "SC",
+    "pcNo": "54",
+    "acId": "7311"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2467",
+    "asmblyNo": "274",
+    "asmblyName": "Bikapur",
+    "category": "GEN",
+    "pcNo": "54",
+    "acId": "7312"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2467",
+    "asmblyNo": "275",
+    "asmblyName": "Ayodhya",
+    "category": "GEN",
+    "pcNo": "54",
+    "acId": "7313"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2467",
+    "asmblyNo": "276",
+    "asmblyName": "Goshainganj",
+    "category": "GEN",
+    "pcNo": "55",
+    "acId": "7316"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2470",
+    "asmblyNo": "277",
+    "asmblyName": "Katehari",
+    "category": "GEN",
+    "pcNo": "55",
+    "acId": "7317"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2470",
+    "asmblyNo": "278",
+    "asmblyName": "Tanda",
+    "category": "GEN",
+    "pcNo": "55",
+    "acId": "7318"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2470",
+    "asmblyNo": "279",
+    "asmblyName": "Alapur ",
+    "category": "SC",
+    "pcNo": "62",
+    "acId": "7354"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2470",
+    "asmblyNo": "280",
+    "asmblyName": "Jalalpur",
+    "category": "GEN",
+    "pcNo": "55",
+    "acId": "7319"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2470",
+    "asmblyNo": "281",
+    "asmblyName": "Akbarpur  ",
+    "category": "GEN",
+    "pcNo": "55",
+    "acId": "7320"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2464",
+    "asmblyNo": "282",
+    "asmblyName": "Balha ",
+    "category": "SC",
+    "pcNo": "56",
+    "acId": "7321"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2464",
+    "asmblyNo": "283",
+    "asmblyName": "Nanpara",
+    "category": "GEN",
+    "pcNo": "56",
+    "acId": "7322"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2464",
+    "asmblyNo": "284",
+    "asmblyName": "Matera",
+    "category": "GEN",
+    "pcNo": "56",
+    "acId": "7323"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2464",
+    "asmblyNo": "285",
+    "asmblyName": "Mahasi",
+    "category": "GEN",
+    "pcNo": "56",
+    "acId": "7324"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2464",
+    "asmblyNo": "286",
+    "asmblyName": "Bahraich",
+    "category": "GEN",
+    "pcNo": "56",
+    "acId": "7325"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2464",
+    "asmblyNo": "287",
+    "asmblyName": "Payagpur",
+    "category": "GEN",
+    "pcNo": "57",
+    "acId": "7326"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2464",
+    "asmblyNo": "288",
+    "asmblyName": "Kaiserganj",
+    "category": "GEN",
+    "pcNo": "57",
+    "acId": "7327"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2466",
+    "asmblyNo": "289",
+    "asmblyName": "Bhinga",
+    "category": "GEN",
+    "pcNo": "58",
+    "acId": "7331"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2466",
+    "asmblyNo": "290",
+    "asmblyName": "Shrawasti",
+    "category": "GEN",
+    "pcNo": "58",
+    "acId": "7332"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2465",
+    "asmblyNo": "291",
+    "asmblyName": "Tulsipur",
+    "category": "GEN",
+    "pcNo": "58",
+    "acId": "7333"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2465",
+    "asmblyNo": "292",
+    "asmblyName": "Gainsari",
+    "category": "GEN",
+    "pcNo": "58",
+    "acId": "7334"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2465",
+    "asmblyNo": "293",
+    "asmblyName": "Utraula",
+    "category": "GEN",
+    "pcNo": "59",
+    "acId": "7338"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2465",
+    "asmblyNo": "294",
+    "asmblyName": "Balrampur ",
+    "category": "SC",
+    "pcNo": "58",
+    "acId": "7335"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2463",
+    "asmblyNo": "295",
+    "asmblyName": "Mehnaun",
+    "category": "GEN",
+    "pcNo": "59",
+    "acId": "7336"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2463",
+    "asmblyNo": "296",
+    "asmblyName": "Gonda",
+    "category": "GEN",
+    "pcNo": "59",
+    "acId": "7337"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2463",
+    "asmblyNo": "297",
+    "asmblyName": "Katra Bazar",
+    "category": "GEN",
+    "pcNo": "57",
+    "acId": "7328"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2463",
+    "asmblyNo": "298",
+    "asmblyName": "Colonelganj",
+    "category": "GEN",
+    "pcNo": "57",
+    "acId": "7329"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2463",
+    "asmblyNo": "299",
+    "asmblyName": "Tarabganj",
+    "category": "GEN",
+    "pcNo": "57",
+    "acId": "7330"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2463",
+    "asmblyNo": "300",
+    "asmblyName": "Mankapur ",
+    "category": "SC",
+    "pcNo": "59",
+    "acId": "7339"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2463",
+    "asmblyNo": "301",
+    "asmblyName": "Gaura",
+    "category": "GEN",
+    "pcNo": "59",
+    "acId": "7340"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2455",
+    "asmblyNo": "302",
+    "asmblyName": "Shohratgarh",
+    "category": "GEN",
+    "pcNo": "60",
+    "acId": "7341"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2455",
+    "asmblyNo": "303",
+    "asmblyName": "Kapilvastu ",
+    "category": "SC",
+    "pcNo": "60",
+    "acId": "7342"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2455",
+    "asmblyNo": "304",
+    "asmblyName": "Bansi",
+    "category": "GEN",
+    "pcNo": "60",
+    "acId": "7343"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2455",
+    "asmblyNo": "305",
+    "asmblyName": "Itwa",
+    "category": "GEN",
+    "pcNo": "60",
+    "acId": "7344"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2455",
+    "asmblyNo": "306",
+    "asmblyName": "Doomariyaganj",
+    "category": "GEN",
+    "pcNo": "60",
+    "acId": "7345"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2454",
+    "asmblyNo": "307",
+    "asmblyName": "Harraiya",
+    "category": "GEN",
+    "pcNo": "61",
+    "acId": "7346"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2454",
+    "asmblyNo": "308",
+    "asmblyName": "Kaptanganj",
+    "category": "GEN",
+    "pcNo": "61",
+    "acId": "7347"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2454",
+    "asmblyNo": "309",
+    "asmblyName": "Rudhauli",
+    "category": "GEN",
+    "pcNo": "61",
+    "acId": "7348"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2454",
+    "asmblyNo": "310",
+    "asmblyName": "Basti Sadar",
+    "category": "GEN",
+    "pcNo": "61",
+    "acId": "7349"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2454",
+    "asmblyNo": "311",
+    "asmblyName": "Mahadewa ",
+    "category": "SC",
+    "pcNo": "61",
+    "acId": "7350"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2456",
+    "asmblyNo": "312",
+    "asmblyName": "Menhdawal",
+    "category": "GEN",
+    "pcNo": "62",
+    "acId": "7351"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2456",
+    "asmblyNo": "313",
+    "asmblyName": "Khalilabad",
+    "category": "GEN",
+    "pcNo": "62",
+    "acId": "7352"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2456",
+    "asmblyNo": "314",
+    "asmblyName": "Dhanghata ",
+    "category": "SC",
+    "pcNo": "62",
+    "acId": "7353"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2451",
+    "asmblyNo": "315",
+    "asmblyName": "Pharenda",
+    "category": "GEN",
+    "pcNo": "63",
+    "acId": "7356"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2451",
+    "asmblyNo": "316",
+    "asmblyName": "Nautanwa",
+    "category": "GEN",
+    "pcNo": "63",
+    "acId": "7357"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2451",
+    "asmblyNo": "317",
+    "asmblyName": "Siswa",
+    "category": "GEN",
+    "pcNo": "63",
+    "acId": "7358"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2451",
+    "asmblyNo": "318",
+    "asmblyName": "Maharajganj ",
+    "category": "SC",
+    "pcNo": "63",
+    "acId": "7359"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2451",
+    "asmblyNo": "319",
+    "asmblyName": "PANIYRA",
+    "category": "GEN",
+    "pcNo": "63",
+    "acId": "7360"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2450",
+    "asmblyNo": "320",
+    "asmblyName": "Caimpiyarganj",
+    "category": "GEN",
+    "pcNo": "64",
+    "acId": "7361"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2450",
+    "asmblyNo": "321",
+    "asmblyName": "Pipraich",
+    "category": "GEN",
+    "pcNo": "64",
+    "acId": "7362"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2450",
+    "asmblyNo": "322",
+    "asmblyName": "Gorakhpur Urban",
+    "category": "GEN",
+    "pcNo": "64",
+    "acId": "7363"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2450",
+    "asmblyNo": "323",
+    "asmblyName": "Gorakhpur Rural",
+    "category": "GEN",
+    "pcNo": "64",
+    "acId": "7364"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2450",
+    "asmblyNo": "324",
+    "asmblyName": "Sahajanwa",
+    "category": "GEN",
+    "pcNo": "64",
+    "acId": "7365"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2450",
+    "asmblyNo": "325",
+    "asmblyName": "Khajani ",
+    "category": "SC",
+    "pcNo": "62",
+    "acId": "7355"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2450",
+    "asmblyNo": "326",
+    "asmblyName": "Chauri-Chaura",
+    "category": "GEN",
+    "pcNo": "67",
+    "acId": "7378"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2450",
+    "asmblyNo": "327",
+    "asmblyName": "Bansgaon",
+    "category": "SC",
+    "pcNo": "67",
+    "acId": "7379"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2450",
+    "asmblyNo": "328",
+    "asmblyName": "Chillupar",
+    "category": "GEN",
+    "pcNo": "67",
+    "acId": "7380"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2453",
+    "asmblyNo": "329",
+    "asmblyName": "Khadda",
+    "category": "GEN",
+    "pcNo": "65",
+    "acId": "7366"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2453",
+    "asmblyNo": "330",
+    "asmblyName": "Padrauna",
+    "category": "GEN",
+    "pcNo": "65",
+    "acId": "7367"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2453",
+    "asmblyNo": "331",
+    "asmblyName": "Tamkuhi Raj",
+    "category": "GEN",
+    "pcNo": "66",
+    "acId": "7371"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2453",
+    "asmblyNo": "332",
+    "asmblyName": "Fazilnagar",
+    "category": "GEN",
+    "pcNo": "66",
+    "acId": "7372"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2453",
+    "asmblyNo": "333",
+    "asmblyName": "Kushinagar",
+    "category": "GEN",
+    "pcNo": "65",
+    "acId": "7368"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2453",
+    "asmblyNo": "334",
+    "asmblyName": "Hata",
+    "category": "GEN",
+    "pcNo": "65",
+    "acId": "7369"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2453",
+    "asmblyNo": "335",
+    "asmblyName": "Ramkola",
+    "category": "SC",
+    "pcNo": "65",
+    "acId": "7370"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2452",
+    "asmblyNo": "336",
+    "asmblyName": "Rudrapur",
+    "category": "GEN",
+    "pcNo": "67",
+    "acId": "7377"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2452",
+    "asmblyNo": "337",
+    "asmblyName": "Deoria",
+    "category": "GEN",
+    "pcNo": "66",
+    "acId": "7373"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2452",
+    "asmblyNo": "338",
+    "asmblyName": "Pathardeva",
+    "category": "GEN",
+    "pcNo": "66",
+    "acId": "7374"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2452",
+    "asmblyNo": "339",
+    "asmblyName": "Rampur Karkhana",
+    "category": "GEN",
+    "pcNo": "66",
+    "acId": "7375"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2452",
+    "asmblyNo": "340",
+    "asmblyName": "Bhatpar Rani",
+    "category": "GEN",
+    "pcNo": "71",
+    "acId": "7399"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2452",
+    "asmblyNo": "341",
+    "asmblyName": "Salempur",
+    "category": "SC",
+    "pcNo": "71",
+    "acId": "7400"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2452",
+    "asmblyNo": "342",
+    "asmblyName": "Barhaj",
+    "category": "GEN",
+    "pcNo": "67",
+    "acId": "7376"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2447",
+    "asmblyNo": "343",
+    "asmblyName": "Atrauliya",
+    "category": "GEN",
+    "pcNo": "68",
+    "acId": "7381"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2447",
+    "asmblyNo": "344",
+    "asmblyName": "Gopalpur",
+    "category": "GEN",
+    "pcNo": "69",
+    "acId": "7387"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2447",
+    "asmblyNo": "345",
+    "asmblyName": "Sagri",
+    "category": "GEN",
+    "pcNo": "69",
+    "acId": "7388"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2447",
+    "asmblyNo": "346",
+    "asmblyName": "Mubarakpur",
+    "category": "GEN",
+    "pcNo": "69",
+    "acId": "7389"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2447",
+    "asmblyNo": "347",
+    "asmblyName": "Azamgarh",
+    "category": "GEN",
+    "pcNo": "69",
+    "acId": "7390"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2447",
+    "asmblyNo": "348",
+    "asmblyName": "Nizamabad",
+    "category": "GEN",
+    "pcNo": "68",
+    "acId": "7382"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2447",
+    "asmblyNo": "349",
+    "asmblyName": "Phoolpur Pawai",
+    "category": "GEN",
+    "pcNo": "68",
+    "acId": "7383"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2447",
+    "asmblyNo": "350",
+    "asmblyName": "Didarganj",
+    "category": "GEN",
+    "pcNo": "68",
+    "acId": "7384"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2447",
+    "asmblyNo": "351",
+    "asmblyName": "Lalganj",
+    "category": "SC",
+    "pcNo": "68",
+    "acId": "7385"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2447",
+    "asmblyNo": "352",
+    "asmblyName": "Mehnagar ",
+    "category": "SC",
+    "pcNo": "69",
+    "acId": "7386"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2448",
+    "asmblyNo": "353",
+    "asmblyName": "Madhuban",
+    "category": "GEN",
+    "pcNo": "70",
+    "acId": "7391"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2448",
+    "asmblyNo": "354",
+    "asmblyName": "Ghosi",
+    "category": "GEN",
+    "pcNo": "70",
+    "acId": "7392"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2448",
+    "asmblyNo": "355",
+    "asmblyName": "Muhammadabad- Gohna (SC)",
+    "category": "SC",
+    "pcNo": "70",
+    "acId": "7393"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2448",
+    "asmblyNo": "356",
+    "asmblyName": "Mau",
+    "category": "GEN",
+    "pcNo": "70",
+    "acId": "7394"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2449",
+    "asmblyNo": "357",
+    "asmblyName": "Belthara Road ",
+    "category": "SC",
+    "pcNo": "71",
+    "acId": "7397"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2449",
+    "asmblyNo": "358",
+    "asmblyName": "Rasara",
+    "category": "GEN",
+    "pcNo": "70",
+    "acId": "7395"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2449",
+    "asmblyNo": "359",
+    "asmblyName": "Sikanderpur",
+    "category": "GEN",
+    "pcNo": "71",
+    "acId": "7396"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2449",
+    "asmblyNo": "360",
+    "asmblyName": "Phephana",
+    "category": "GEN",
+    "pcNo": "72",
+    "acId": "7402"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2449",
+    "asmblyNo": "361",
+    "asmblyName": "Ballia Nagar",
+    "category": "GEN",
+    "pcNo": "72",
+    "acId": "7403"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2449",
+    "asmblyNo": "362",
+    "asmblyName": "Bansdih",
+    "category": "GEN",
+    "pcNo": "71",
+    "acId": "7398"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2449",
+    "asmblyNo": "363",
+    "asmblyName": "Bairia",
+    "category": "GEN",
+    "pcNo": "72",
+    "acId": "7401"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2441",
+    "asmblyNo": "364",
+    "asmblyName": "Badlapur",
+    "category": "GEN",
+    "pcNo": "73",
+    "acId": "7406"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2441",
+    "asmblyNo": "365",
+    "asmblyName": "Shahganj",
+    "category": "GEN",
+    "pcNo": "73",
+    "acId": "7407"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2441",
+    "asmblyNo": "366",
+    "asmblyName": "Jaunpur",
+    "category": "GEN",
+    "pcNo": "73",
+    "acId": "7408"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2441",
+    "asmblyNo": "367",
+    "asmblyName": "Malhani",
+    "category": "GEN",
+    "pcNo": "73",
+    "acId": "7409"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2441",
+    "asmblyNo": "368",
+    "asmblyName": "Mungra Badshahpur",
+    "category": "GEN",
+    "pcNo": "73",
+    "acId": "7410"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2441",
+    "asmblyNo": "369",
+    "asmblyName": "Machhlishahr ",
+    "category": "SC",
+    "pcNo": "74",
+    "acId": "7411"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2441",
+    "asmblyNo": "370",
+    "asmblyName": "Mariyahu",
+    "category": "GEN",
+    "pcNo": "74",
+    "acId": "7412"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2441",
+    "asmblyNo": "371",
+    "asmblyName": "Zafrabad",
+    "category": "GEN",
+    "pcNo": "74",
+    "acId": "7413"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2441",
+    "asmblyNo": "372",
+    "asmblyName": "Kerakat ",
+    "category": "SC",
+    "pcNo": "74",
+    "acId": "7414"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2442",
+    "asmblyNo": "373",
+    "asmblyName": "Jakhanian ",
+    "category": "SC",
+    "pcNo": "75",
+    "acId": "7416"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2442",
+    "asmblyNo": "374",
+    "asmblyName": "Saidpur ",
+    "category": "SC",
+    "pcNo": "75",
+    "acId": "7417"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2442",
+    "asmblyNo": "375",
+    "asmblyName": "Ghazipur",
+    "category": "GEN",
+    "pcNo": "75",
+    "acId": "7418"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2442",
+    "asmblyNo": "376",
+    "asmblyName": "Jangipur",
+    "category": "GEN",
+    "pcNo": "75",
+    "acId": "7419"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2442",
+    "asmblyNo": "377",
+    "asmblyName": "Zahoorabad",
+    "category": "GEN",
+    "pcNo": "72",
+    "acId": "7404"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2442",
+    "asmblyNo": "378",
+    "asmblyName": "Mohammadabad",
+    "category": "GEN",
+    "pcNo": "72",
+    "acId": "7405"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2442",
+    "asmblyNo": "379",
+    "asmblyName": "Zamania",
+    "category": "GEN",
+    "pcNo": "75",
+    "acId": "7420"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2443",
+    "asmblyNo": "380",
+    "asmblyName": "Mughalsarai",
+    "category": "GEN",
+    "pcNo": "76",
+    "acId": "7421"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2443",
+    "asmblyNo": "381",
+    "asmblyName": "Sakaldiha",
+    "category": "GEN",
+    "pcNo": "76",
+    "acId": "7422"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2443",
+    "asmblyNo": "382",
+    "asmblyName": "Saiyadraja",
+    "category": "GEN",
+    "pcNo": "76",
+    "acId": "7423"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2443",
+    "asmblyNo": "383",
+    "asmblyName": "Chakia ",
+    "category": "SC",
+    "pcNo": "80",
+    "acId": "7445"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2440",
+    "asmblyNo": "384",
+    "asmblyName": "Pindra",
+    "category": "GEN",
+    "pcNo": "74",
+    "acId": "7415"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2440",
+    "asmblyNo": "385",
+    "asmblyName": "Ajagara ",
+    "category": "SC",
+    "pcNo": "76",
+    "acId": "7424"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2440",
+    "asmblyNo": "386",
+    "asmblyName": "Shivpur",
+    "category": "GEN",
+    "pcNo": "76",
+    "acId": "7425"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2440",
+    "asmblyNo": "387",
+    "asmblyName": "Rohaniya",
+    "category": "GEN",
+    "pcNo": "77",
+    "acId": "7426"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2440",
+    "asmblyNo": "388",
+    "asmblyName": "Varanasi North",
+    "category": "GEN",
+    "pcNo": "77",
+    "acId": "7427"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2440",
+    "asmblyNo": "389",
+    "asmblyName": "Varanasi South",
+    "category": "GEN",
+    "pcNo": "77",
+    "acId": "7428"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2440",
+    "asmblyNo": "390",
+    "asmblyName": "Varanasi Cantt.",
+    "category": "GEN",
+    "pcNo": "77",
+    "acId": "7429"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2440",
+    "asmblyNo": "391",
+    "asmblyName": "Sevapuri",
+    "category": "GEN",
+    "pcNo": "77",
+    "acId": "7430"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2446",
+    "asmblyNo": "392",
+    "asmblyName": "Bhadohi",
+    "category": "GEN",
+    "pcNo": "78",
+    "acId": "7431"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2446",
+    "asmblyNo": "393",
+    "asmblyName": "Gyanpur",
+    "category": "GEN",
+    "pcNo": "78",
+    "acId": "7432"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2446",
+    "asmblyNo": "394",
+    "asmblyName": "Aurai ",
+    "category": "SC",
+    "pcNo": "78",
+    "acId": "7433"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2444",
+    "asmblyNo": "395",
+    "asmblyName": "Chhanbey ",
+    "category": "SC",
+    "pcNo": "79",
+    "acId": "7436"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2444",
+    "asmblyNo": "396",
+    "asmblyName": "Mirzapur",
+    "category": "GEN",
+    "pcNo": "79",
+    "acId": "7437"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2444",
+    "asmblyNo": "397",
+    "asmblyName": "Majhawan",
+    "category": "GEN",
+    "pcNo": "79",
+    "acId": "7438"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2444",
+    "asmblyNo": "398",
+    "asmblyName": "Chunar",
+    "category": "GEN",
+    "pcNo": "79",
+    "acId": "7439"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2444",
+    "asmblyNo": "399",
+    "asmblyName": "Marihan",
+    "category": "GEN",
+    "pcNo": "79",
+    "acId": "7440"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2445",
+    "asmblyNo": "400",
+    "asmblyName": "Ghorawal",
+    "category": "GEN",
+    "pcNo": "80",
+    "acId": "7441"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2445",
+    "asmblyNo": "401",
+    "asmblyName": "Robertsganj",
+    "category": "GEN",
+    "pcNo": "80",
+    "acId": "7442"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2445",
+    "asmblyNo": "402",
+    "asmblyName": "Obra",
+    "category": "ST",
+    "pcNo": "80",
+    "acId": "7443"
+  },
+  {
+    "stateCd": "S24",
+    "districtCd": "S2445",
+    "asmblyNo": "403",
+    "asmblyName": "Duddhi ",
+    "category": "ST",
+    "pcNo": "80",
+    "acId": "7444"
+  }
+]

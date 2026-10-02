@@ -1,0 +1,8 @@
+requests>=2.31
+cryptography>=42.0
+numpy
+pandas
+opencv-python
+pymupdf
+paddlepaddle
+paddleocr>=3.1
