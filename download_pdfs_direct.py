@@ -57,13 +57,35 @@ USAGE
     # Everything in the CSV
     python download_pdfs_direct.py --all
 
-    # Resolve the 4 ACs with blank part counts in the CSV (55,61,62,170)
-    # via the live API (no captcha needed) instead of downloading yet
+    # Resolve any ACs the CSV leaves with a blank part count, via the
+    # live API (no captcha needed), instead of downloading yet. A no-op
+    # if the CSV already has a count for every AC (--all already covers
+    # all of them in that case — nothing is ever skipped silently).
     python download_pdfs_direct.py --resolve-missing-counts
 
 Files land in ./downloads/<AC>/<filename>.pdf. Progress/failures are
 logged to ./download_log.jsonl and safely resumable — already-downloaded
 files (valid, non-empty, correct %PDF header) are skipped on re-run.
+
+FAILED/MISSING TRACKING — failed_or_missing.csv
+------------------------------------------------
+Every run updates ./failed_or_missing.csv to the CURRENT set of parts
+that came back 404 or failed (timeout, bad response, etc.) — columns:
+ac, part, url, status, detail, last_checked. It is NOT a growing log of
+every attempt ever made:
+  - a part that fails/404s in THIS run is added, or refreshed if it was
+    already there from an earlier run (new detail + timestamp)
+  - a part that succeeds (or was already downloaded) in THIS run is
+    REMOVED from the CSV — it's no longer a failure
+  - any AC/part not touched by this run (different --acs) is left alone,
+    so results from separate --acs runs accumulate in the same file
+    instead of overwriting each other
+Overflow probes (the few extra part numbers tried past an AC's known
+count, to check whether the CSV undercounts it) are never written here —
+a 404 there is the expected outcome, not a real failure.
+
+Re-run the same command later and any part that now succeeds drops out
+of the CSV automatically — no separate "clear" step needed.
 """
 import argparse
 import concurrent.futures
@@ -92,6 +114,8 @@ CSV_PATH = HERE / "UP_parts_by_AC.csv"
 OUT_DIR = HERE / "downloads"
 LOG_PATH = HERE / "download_log.jsonl"
 OVERRIDES_PATH = HERE / "part_count_overrides.json"
+FAILED_CSV_PATH = HERE / "failed_or_missing.csv"
+FAILED_CSV_FIELDS = ["ac", "part", "url", "status", "detail", "last_checked"]
 
 OVERFLOW_PROBE = 3  # after the CSV's count, try this many extra part numbers
                      # in case the CSV undercounts; stop after this many
@@ -110,12 +134,78 @@ _log_lock = threading.Lock()
 _stats_lock = threading.Lock()
 _stats = {"done": 0, "skipped": 0, "failed": 0, "bytes": 0, "missing_404": 0}
 
+_run_lock = threading.Lock()
+_run_record = {}  # (ac, part) -> {"status": ..., "detail": ...} for every part touched THIS run
+
 
 def log_event(event: dict):
     event["ts"] = time.time()
     with _log_lock:
         with open(LOG_PATH, "a") as f:
             f.write(json.dumps(event) + "\n")
+
+
+def record_result(ac: str, part: int, status: str, detail: str = "", is_probe: bool = False):
+    """Tracks the outcome of every part processed in this run, keyed by
+    (ac, part). Used after the run to update failed_or_missing.csv — see
+    update_failure_csv(). Only the LATEST outcome per part matters (a
+    retry within the same run overwrites the earlier one), so a plain
+    dict keyed by (ac, part) is enough; no need to keep history here.
+    is_probe=True (an overflow-probe part beyond the AC's known part
+    count) is never recorded — see download_one's docstring."""
+    if is_probe:
+        return
+    with _run_lock:
+        _run_record[(str(ac), str(part))] = {"status": status, "detail": detail}
+
+
+def update_failure_csv(run_record: dict):
+    """Keeps failed_or_missing.csv as a CURRENT list of every (ac, part)
+    that returned 404 or failed, across however many separate runs you've
+    done — not a growing log of every attempt ever made:
+      - a part that fails/404s THIS run is added (or updated, if it was
+        already in there from a previous run — detail/last_checked refresh)
+      - a part that succeeds (or was already downloaded) THIS run is
+        removed from the file, since it's no longer missing/failed
+      - any AC/part NOT touched in this run (you ran with different
+        --acs) is left exactly as-is — this never wipes the whole file,
+        only updates the rows for parts this run actually looked at.
+    So after running --acs 86,87,88 and later --acs 1,2,3,4,5,6, the CSV
+    ends up holding the current failures from BOTH runs at once."""
+    existing = {}
+    if FAILED_CSV_PATH.exists():
+        with open(FAILED_CSV_PATH, newline="", encoding="utf-8") as f:
+            for row in csv.DictReader(f):
+                existing[(row["ac"], row["part"])] = row
+
+    now = time.strftime("%Y-%m-%d %H:%M:%S")
+    added = updated = resolved = 0
+    for (ac, part), info in run_record.items():
+        key = (ac, part)
+        status = info["status"]
+        if status in ("failed", "missing"):
+            if key in existing:
+                updated += 1
+            else:
+                added += 1
+            existing[key] = {
+                "ac": ac, "part": part, "url": pdf_url(ac, int(part)),
+                "status": "404_missing" if status == "missing" else "failed",
+                "detail": info.get("detail", ""),
+                "last_checked": now,
+            }
+        elif key in existing:  # now ok/skipped — no longer failed, drop the stale row
+            del existing[key]
+            resolved += 1
+
+    with open(FAILED_CSV_PATH, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=FAILED_CSV_FIELDS)
+        writer.writeheader()
+        for key in sorted(existing, key=lambda k: (int(k[0]), int(k[1]))):
+            writer.writerow(existing[key])
+
+    print(f"{FAILED_CSV_PATH.name}: {added} new, {updated} updated, {resolved} resolved/removed "
+          f"this run — {len(existing)} currently listed as failed/missing.")
 
 
 def make_session(pool_size: int = 64):
@@ -148,6 +238,14 @@ def is_valid_pdf(path: pathlib.Path) -> bool:
 
 
 def load_part_counts():
+    """The CSV is always the source of truth when it has a value for an
+    AC. part_count_overrides.json (written by --resolve-missing-counts)
+    only FILLS IN ACs the CSV still leaves blank — it never overwrites a
+    count the CSV already has. That matters if you've since edited the
+    CSV directly (e.g. filled in the previously-blank ACs yourself): an
+    old overrides.json left over from an earlier run can no longer
+    silently reintroduce a stale number for an AC you've already
+    corrected in the CSV."""
     counts = {}
     missing = []
     with open(CSV_PATH, newline="") as f:
@@ -164,6 +262,8 @@ def load_part_counts():
     if OVERRIDES_PATH.exists():
         overrides = json.loads(OVERRIDES_PATH.read_text())
         for ac, n in overrides.items():
+            if ac in counts:
+                continue  # CSV already has a real value for this AC — don't clobber it
             counts[ac] = int(n)
             if ac in missing:
                 missing.remove(ac)
@@ -221,8 +321,15 @@ def resolve_missing_counts_live(missing_acs):
     return resolved
 
 
-def download_one(session, ac: str, part: int) -> str:
+def download_one(session, ac: str, part: int, is_probe: bool = False) -> str:
     """Returns 'ok' | 'skipped' | 'missing' | 'failed'.
+
+    is_probe=True means this part number is beyond the CSV's known part
+    count for this AC (an overflow probe, checking whether the AC
+    actually has more parts than the CSV says). A 404 there is the
+    EXPECTED, normal outcome, not a real failure, so probe results are
+    never written to failed_or_missing.csv — only genuine failures/404s
+    within the AC's known part range are.
 
     Streams the response straight to disk (stream=True + iter_content)
     instead of buffering the whole PDF in memory via r.content. With
@@ -238,28 +345,42 @@ def download_one(session, ac: str, part: int) -> str:
     if is_valid_pdf(dest):
         with _stats_lock:
             _stats["skipped"] += 1
+        record_result(ac, part, "skipped", is_probe=is_probe)
         return "skipped"
 
     dest.parent.mkdir(parents=True, exist_ok=True)
     url = pdf_url(ac, part)
+
+    # NOTE: with stream=True, session.get() only opens the connection and
+    # reads the response headers — the body is read lazily, chunk by
+    # chunk, inside the iter_content() loop below. A timeout/connection
+    # drop can happen during EITHER phase, so both are wrapped in their
+    # own try/except for requests.RequestException. (A previous version
+    # only wrapped the session.get() call — a timeout mid-download during
+    # iter_content() was uncaught, propagated out of this function, and
+    # killed the entire worker thread for that AC, abandoning every
+    # remaining part. That's the "AC 86 raised: ... Read timed out" bug.)
     try:
-        r = session.get(url, timeout=60, stream=True)
+        r = session.get(url, timeout=(15, 60), stream=True)
     except requests.RequestException as exc:
         log_event({"ac": ac, "part": part, "status": "error", "detail": str(exc)})
         with _stats_lock:
             _stats["failed"] += 1
+        record_result(ac, part, "failed", str(exc), is_probe=is_probe)
         return "failed"
 
     try:
         if r.status_code == 404:
             with _stats_lock:
                 _stats["missing_404"] += 1
+            record_result(ac, part, "missing", "HTTP 404", is_probe=is_probe)
             return "missing"
         if r.status_code != 200:
             log_event({"ac": ac, "part": part, "status": "bad_response",
                         "http_status": r.status_code})
             with _stats_lock:
                 _stats["failed"] += 1
+            record_result(ac, part, "failed", f"HTTP {r.status_code}", is_probe=is_probe)
             return "failed"
 
         tmp_dest = dest.with_suffix(dest.suffix + ".part")
@@ -276,10 +397,21 @@ def download_one(session, ac: str, part: int) -> str:
                                         "http_status": r.status_code, "detail": "no %PDF- header"})
                             with _stats_lock:
                                 _stats["failed"] += 1
+                            record_result(ac, part, "failed", "no %PDF- header in response", is_probe=is_probe)
                             return "failed"
                         first_chunk = False
                     f.write(chunk)
                     size += len(chunk)
+        except requests.RequestException as exc:
+            # timeout / connection drop PARTWAY through the body — this is
+            # the case the old code missed. Treat exactly like any other
+            # failed download: log it, clean up the partial file, move on.
+            log_event({"ac": ac, "part": part, "status": "error",
+                        "detail": f"body read failed: {exc}"})
+            with _stats_lock:
+                _stats["failed"] += 1
+            record_result(ac, part, "failed", f"body read failed: {exc}", is_probe=is_probe)
+            return "failed"
         finally:
             if first_chunk:  # loop never ran, or we bailed before writing — nothing valid written
                 tmp_dest.unlink(missing_ok=True)
@@ -288,6 +420,7 @@ def download_one(session, ac: str, part: int) -> str:
         with _stats_lock:
             _stats["done"] += 1
             _stats["bytes"] += size
+        record_result(ac, part, "ok", is_probe=is_probe)
         return "ok"
     finally:
         r.close()
@@ -331,7 +464,20 @@ def run_downloads(target_acs: dict, concurrency: int):
         results = []
         consecutive_miss = 0
         for part in parts:
-            res = download_one(session, ac, part)
+            is_probe = part > base_count
+            # Defense in depth: download_one() shouldn't raise anymore (the
+            # body-read timeout bug is fixed above), but if it or anything
+            # else ever throws something unexpected, one bad part must not
+            # abort every remaining part for this AC the way it did before.
+            try:
+                res = download_one(session, ac, part, is_probe=is_probe)
+            except Exception as exc:
+                log_event({"ac": ac, "part": part, "status": "error",
+                            "detail": f"unexpected: {exc}"})
+                with _stats_lock:
+                    _stats["failed"] += 1
+                record_result(ac, part, "failed", f"unexpected: {exc}", is_probe=is_probe)
+                res = "failed"
             results.append((part, res))
             if part > base_count:  # in overflow-probe territory
                 if res == "missing":
@@ -360,6 +506,7 @@ def run_downloads(target_acs: dict, concurrency: int):
                 last_print = now
     print_progress(total)
     print()
+    update_failure_csv(_run_record)
 
 
 def main():
