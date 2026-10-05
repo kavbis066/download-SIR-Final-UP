@@ -86,6 +86,55 @@ def _load_tpl():
 TPL = _load_tpl()
 STAMP_MASK = TPL["S"]["mask"][0]     # where the DELETED stamp sits on a 301x124 card
 
+# ---------------------------------------------------------------------------
+# Supplementary templates — added on top of TPL without ever touching the
+# embedded _TPL blob above (never retyped/regenerated; that stays exactly
+# as copied from parse_roll.py).
+#
+# WHY THIS EXISTS: the embedded _TPL set has status-letter templates for
+# only S, R, E and # (TPL["M"] == {"S":.., "R":.., "E":.., "#":..}) — there
+# is NO template for "Q" or "M" at all. Any card actually marked Q/M can
+# therefore never match correctly; match() is forced to pick whichever of
+# S/R/E/# scores (wrongly) highest. This was found directly: 8 rows
+# flagged "status_letter_unclear" were checked against the real PDF pages
+# and every one was visibly Q on the card, yet came out as E or S in the
+# CSV — not a confidence problem, a missing-template problem.
+#
+# Fix: extract_q_templates.py (next to this file) pulled tight glyph crops
+# of the "Q" marker from 3 of those confirmed cards (AC 86 part 101, pages
+# 22/20, visually verified against the source PDF) and saved them to
+# extra_templates.npz, in the same key format _load_tpl() above expects
+# (e.g. "M_Q__0"). This loader merges that file's entries into TPL after
+# the real one loads. No "M" (missing) examples have been found/confirmed
+# yet, so that gap remains — a card genuinely marked "M" will still
+# mismatch until a confirmed example is added the same way.
+#
+# extra_templates.npz is optional: if it isn't present, TPL just stays
+# exactly as the embedded blob defines it (current behavior, unchanged).
+# -----------------------------------------------------------------------
+_EXTRA_TPL_PATH = pathlib.Path(__file__).resolve().parent / "extra_templates.npz"
+
+def _load_extra_templates(tpl, path=_EXTRA_TPL_PATH):
+    if not path.exists():
+        return tpl
+    try:
+        z = np.load(path)
+    except Exception as exc:
+        print(f"[tpl] could not load {path.name}: {exc}", file=sys.stderr)
+        return tpl
+    added = []
+    for k in z.files:
+        grp, rest = k.split("_", 1)
+        label = rest.split("__")[0]
+        tpl.setdefault(grp, {}).setdefault(label, []).append(z[k])
+        added.append(f"{grp}/{label}")
+    if added:
+        print(f"[tpl] loaded {len(added)} supplementary template(s) from {path.name}: {added}",
+              file=sys.stderr)
+    return tpl
+
+TPL = _load_extra_templates(TPL)
+
 def match(region, group):
     """Best template label, its score, and margin over the runner-up."""
     sc = {}
