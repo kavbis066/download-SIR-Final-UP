@@ -77,6 +77,12 @@ USAGE
     # all of them in that case — nothing is ever skipped silently).
     python download_pdfs_direct.py --resolve-missing-counts
 
+    # Re-attempt ONLY the parts currently listed in failed_or_missing.csv
+    # (no need to re-run a whole --acs/--all batch just to clean up a
+    # handful of failures). Updates failed_or_missing.csv afterward —
+    # anything that now succeeds is removed from it automatically.
+    python download_pdfs_direct.py --retry-failed --concurrency 24
+
 Files land in ./downloads/<AC>/<filename>.pdf. Progress/failures are
 logged to ./download_log.jsonl and safely resumable — already-downloaded
 files (valid, non-empty, correct %PDF header) are skipped on re-run.
@@ -99,7 +105,16 @@ count, to check whether the CSV undercounts it) are never written here —
 a 404 there is the expected outcome, not a real failure.
 
 Re-run the same command later and any part that now succeeds drops out
-of the CSV automatically — no separate "clear" step needed.
+of the CSV automatically — no separate "clear" step needed. To clean up
+just the failures without re-running a whole --acs/--all batch, use
+--retry-failed (see USAGE above) — it reads failed_or_missing.csv
+directly and re-attempts exactly those parts.
+
+Note this file is ONLY ever written by this script (download_pdfs_direct.py),
+on an actual download attempt. verify_downloads.py is a separate, read-only
+completeness check against the UP_parts_by_AC.csv counts, and intentionally
+writes to a different file (missing_parts.csv by default) — running it does
+NOT update failed_or_missing.csv or retry anything.
 """
 import argparse
 import concurrent.futures
@@ -543,6 +558,60 @@ def run_downloads(target_acs: dict, concurrency: int):
     update_failure_csv(_run_record)
 
 
+def run_retry(jobs, concurrency):
+    """Re-attempt a flat list of (ac, part) tuples — used by --retry-failed.
+
+    Unlike run_downloads(), there's no overflow-probe grouping or
+    consecutive-miss logic here: every (ac, part) in `jobs` came from
+    failed_or_missing.csv, i.e. a real, previously-known part number, not
+    a speculative probe. Each still gets download_one()'s own built-in
+    3-attempt retry-with-backoff before counting as failed/missing again.
+    update_failure_csv() at the end reconciles failed_or_missing.csv:
+    anything that now succeeds is removed, anything still bad is
+    refreshed with a new timestamp/detail.
+    """
+    total = len(jobs)
+    print(f"Retrying {total} previously failed/missing part(s)...")
+    session = make_session(pool_size=max(64, concurrency))
+    with concurrent.futures.ThreadPoolExecutor(max_workers=concurrency) as pool:
+        futures = {
+            pool.submit(download_one, session, ac, part, False): (ac, part)
+            for ac, part in jobs
+        }
+        last_print = 0
+        for fut in concurrent.futures.as_completed(futures):
+            ac, part = futures[fut]
+            try:
+                fut.result()
+            except Exception as exc:
+                print(f"\n  ! {ac}/{part} raised: {exc}")
+                with _stats_lock:
+                    _stats["failed"] += 1
+                record_result(ac, part, "failed", f"unexpected: {exc}", is_probe=False)
+            now = time.time()
+            if now - last_print > 0.5:
+                print_progress(total)
+                last_print = now
+    print_progress(total)
+    print()
+    update_failure_csv(_run_record)
+
+
+def load_failed_jobs():
+    """Reads failed_or_missing.csv and returns a flat [(ac, part), ...]
+    list — the input to --retry-failed. Returns [] if the file doesn't
+    exist or is empty (nothing to retry)."""
+    if not FAILED_CSV_PATH.exists():
+        return []
+    jobs = []
+    with open(FAILED_CSV_PATH, newline="", encoding="utf-8") as f:
+        for row in csv.DictReader(f):
+            ac, part = row.get("ac"), row.get("part")
+            if ac and part:
+                jobs.append((ac, int(part)))
+    return jobs
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--acs", help="comma-separated AC numbers, e.g. 86,87")
@@ -555,7 +624,20 @@ def main():
                           "retry/backoff will mostly absorb occasional ones on its own).")
     ap.add_argument("--resolve-missing-counts", action="store_true",
                      help="look up part counts for ACs the CSV left blank, via the live API (no captcha needed), and exit")
+    ap.add_argument("--retry-failed", action="store_true",
+                     help="re-attempt exactly the parts currently listed in failed_or_missing.csv "
+                          "(instead of a whole --acs/--all batch), then update that CSV with the "
+                          "results. A no-op with a friendly message if the CSV is empty/missing.")
     args = ap.parse_args()
+
+    if args.retry_failed:
+        jobs = load_failed_jobs()
+        if not jobs:
+            print(f"{FAILED_CSV_PATH.name} has nothing to retry (missing, empty, or all clear).")
+            return
+        print(f"Found {len(jobs)} part(s) in {FAILED_CSV_PATH.name} to retry.\n")
+        run_retry(jobs, args.concurrency)
+        return
 
     counts, missing = load_part_counts()
 
