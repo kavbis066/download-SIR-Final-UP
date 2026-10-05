@@ -1,1 +1,6 @@
 ac,part,url,status,detail,last_checked
+38,102,https://voters.eci.gov.in/eroll/2026/s24/sir-finalroll/38/2026-EROLLGEN-S24-38-SIR-FinalRoll-Revision1-HIN-102-WI.pdf,failed,"body read failed: HTTPSConnectionPool(host='voters.eci.gov.in', port=443): Read timed out.",2026-10-05 12:07:53
+42,27,https://voters.eci.gov.in/eroll/2026/s24/sir-finalroll/42/2026-EROLLGEN-S24-42-SIR-FinalRoll-Revision1-HIN-27-WI.pdf,failed,"body read failed: HTTPSConnectionPool(host='voters.eci.gov.in', port=443): Read timed out.",2026-10-05 12:07:53
+71,9,https://voters.eci.gov.in/eroll/2026/s24/sir-finalroll/71/2026-EROLLGEN-S24-71-SIR-FinalRoll-Revision1-HIN-9-WI.pdf,failed,"body read failed: HTTPSConnectionPool(host='voters.eci.gov.in', port=443): Read timed out.",2026-10-05 12:07:53
+242,174,https://voters.eci.gov.in/eroll/2026/s24/sir-finalroll/242/2026-EROLLGEN-S24-242-SIR-FinalRoll-Revision1-HIN-174-WI.pdf,failed,"body read failed: HTTPSConnectionPool(host='voters.eci.gov.in', port=443): Read timed out.",2026-10-05 12:07:53
+253,6,https://voters.eci.gov.in/eroll/2026/s24/sir-finalroll/253/2026-EROLLGEN-S24-253-SIR-FinalRoll-Revision1-HIN-6-WI.pdf,failed,"body read failed: HTTPSConnectionPool(host='voters.eci.gov.in', port=443): Read timed out.",2026-10-05 12:07:53
