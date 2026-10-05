@@ -3,3 +3,4 @@ __pycache__
 downloads/
 downloads_test/
 ac86_test/
+test_batch/

@@ -1,7 +1,32 @@
 #!/usr/bin/env python3
 """
-ocr_extract_paddleocr.py (v7) -- fast extraction pipeline, rebuilt on the
+ocr_extract_paddleocr.py (v8) -- fast extraction pipeline, rebuilt on the
 architecture from your colleague's parse_roll.py.
+
+WHAT CHANGED IN v8 -- status_code showing "?" and gender going blank
+on real, correctly-matched cards
+----------------------------------------------------------------------
+Found by reviewing real output from v7 run on multiple PDFs: 8 rows
+whose watermark stamp clearly showed status letter "Q" came out with
+status_code "?" instead, and a card for "काजल" with an unmistakable
+female photo/card came out with gender left blank entirely.
+
+Root cause: the status-letter and gender template matches (pixel
+matching against the embedded reference images, not OCR) DID find the
+right answer in both cases -- but the match score/margin fell just under
+the confidence cutoff, and the old code threw the match away entirely
+or replaced it with "?" instead of just flagging it as unreliable. That
+silently destroyed a known-correct value AND, for status letters, the
+whole reason a card is shown as deleted -- exactly the piece of
+information this project cares about getting right.
+
+Fixed to match how relation_type already handled this correctly: always
+keep the best-matched value (the letter/gender the template matcher
+actually found), and only use review_reason ("status_letter_unclear" /
+"gender_unclear") to flag it when the match was below the confidence
+threshold, instead of discarding it. "?" is now reserved for the
+genuinely-no-match case (nothing scored at all), not "scored, but not
+quite enough."
 
 WHAT CHANGED FROM v6 -- WHY v6 WAS SLOW
 ----------------------------------------------------------------------
@@ -95,7 +120,7 @@ import pandas as pd
 
 import ocr_extract as base
 
-VERSION = "v7"
+VERSION = "v8"
 
 TPL_MIN, TPL_MARGIN = base.TPL_MIN, base.TPL_MARGIN
 REVIEW_BELOW = 0.90  # confirmed against your colleague's CSV in earlier versions
@@ -206,8 +231,21 @@ def process_pdf(pdf_path: pathlib.Path, hi, en, log=print, dump_review=False, re
         code = ""
         if info["marker_ink"] > 8:
             lab, s, m = info["marker"]
-            code = lab if (s >= TPL_MIN - 0.15 and m >= TPL_MARGIN) else "?"
-            if code == "?":
+            if lab:
+                # Use the best-matched letter even when its score/margin is
+                # below the confidence cutoff — a low-confidence E/S/R/M/Q is
+                # still far more informative than throwing it away and
+                # writing "?" instead (which also silently discarded the
+                # actual reason a card was deleted, exactly the field this
+                # whole project cares most about getting right). Flag it for
+                # review instead of discarding it.
+                code = lab
+                if not (s >= TPL_MIN - 0.15 and m >= TPL_MARGIN):
+                    why.append("status_letter_unclear")
+            else:
+                # No template cleared even the loosest match at all (not a
+                # confidence issue — nothing scored) — genuinely unknown.
+                code = "?"
                 why.append("status_letter_unclear")
         stamped = info["stamp_px"] > 60
 
@@ -246,8 +284,13 @@ def process_pdf(pdf_path: pathlib.Path, hi, en, log=print, dump_review=False, re
             why.append("age")
 
         glab, gs, gm = info["gender"]
-        gender = glab if (gs >= TPL_MIN - 0.1 and gm >= TPL_MARGIN) else ""
-        if not gender:
+        # Same fix as status code above: keep the best-matched gender even
+        # at low confidence instead of blanking it out — this was exactly
+        # the काजल bug (clearly female on the card, template match found
+        # "महिला" correctly, but score fell just under the cutoff so the
+        # field was wiped to empty instead of just being flagged).
+        gender = glab or ""
+        if not (gs >= TPL_MIN - 0.1 and gm >= TPL_MARGIN):
             why.append("gender_unclear (possibly तृतीय लिंग)")
 
         sec = None

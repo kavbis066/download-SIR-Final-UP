@@ -42,6 +42,20 @@ next; back off if they start appearing. Already-valid files are skipped
 on re-run, so there's no harm in stopping and restarting with a
 different --concurrency value.
 
+RELIABILITY — retrying transient failures
+-------------------------------------------
+A timeout or dropped connection (either when opening the request, or
+partway through downloading the body) no longer counts as a permanent
+failure on the first try — each part gets up to 3 attempts, with a short
+backoff between them, before it's actually recorded as failed. This is
+specifically for cases like: you check a URL that shows up in
+failed_or_missing.csv by hand and the PDF is right there — that almost
+always means a one-off network hiccup during that particular attempt,
+not a real problem with the file or URL, and a bare retry fixes it. A
+genuine 404 or a response that isn't actually a PDF is NOT retried,
+since asking the identical question again isn't expected to change the
+answer.
+
 SETUP
 -----
     pip install -r requirements.txt
@@ -321,67 +335,34 @@ def resolve_missing_counts_live(missing_acs):
     return resolved
 
 
-def download_one(session, ac: str, part: int, is_probe: bool = False) -> str:
-    """Returns 'ok' | 'skipped' | 'missing' | 'failed'.
+MAX_ATTEMPTS = 3          # per part, before giving up as a real failure
+RETRY_BACKOFF_BASE = 2.0  # seconds; attempt N waits RETRY_BACKOFF_BASE * N
 
-    is_probe=True means this part number is beyond the CSV's known part
-    count for this AC (an overflow probe, checking whether the AC
-    actually has more parts than the CSV says). A 404 there is the
-    EXPECTED, normal outcome, not a real failure, so probe results are
-    never written to failed_or_missing.csv — only genuine failures/404s
-    within the AC's known part range are.
 
-    Streams the response straight to disk (stream=True + iter_content)
-    instead of buffering the whole PDF in memory via r.content. With
-    --concurrency raised well above the old default of 12, buffering
-    every in-flight file fully in RAM at once stops being free — on a
-    ~7MB average file, 64 concurrent downloads held in memory is ~450MB
-    just for response bodies, on top of everything else running. This
-    also means we stop writing a corrupt file: we check the %PDF- header
-    on the first chunk and bail out (deleting the partial .part file)
-    before most of a bad response has even been written, rather than
-    discovering it only after writing the whole thing."""
-    dest = local_path(ac, part)
-    if is_valid_pdf(dest):
-        with _stats_lock:
-            _stats["skipped"] += 1
-        record_result(ac, part, "skipped", is_probe=is_probe)
-        return "skipped"
-
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    url = pdf_url(ac, part)
-
-    # NOTE: with stream=True, session.get() only opens the connection and
-    # reads the response headers — the body is read lazily, chunk by
-    # chunk, inside the iter_content() loop below. A timeout/connection
-    # drop can happen during EITHER phase, so both are wrapped in their
-    # own try/except for requests.RequestException. (A previous version
-    # only wrapped the session.get() call — a timeout mid-download during
-    # iter_content() was uncaught, propagated out of this function, and
-    # killed the entire worker thread for that AC, abandoning every
-    # remaining part. That's the "AC 86 raised: ... Read timed out" bug.)
+def _attempt_download(session, url: str, dest: pathlib.Path):
+    """One single attempt at downloading `url` to `dest`. Returns
+    (status, detail, size):
+      - status "ok"      — downloaded and verified, dest now holds the file
+      - status "missing" — real HTTP 404, not worth retrying
+      - status "failed"  — a PERMANENT problem (bad status code other than
+        a timeout/connection issue, or a response that isn't actually a
+        PDF) — retrying the exact same request isn't expected to help
+      - status "retry"   — a TRANSIENT problem (timeout or connection
+        drop, at connect time or partway through the body) — exactly the
+        kind of failure a plain re-attempt often fixes, since the file is
+        confirmed to exist (the 6 "failed" entries you checked by hand
+        were all real, downloadable PDFs — just a one-off network hiccup,
+        not a bad URL)."""
     try:
         r = session.get(url, timeout=(15, 60), stream=True)
     except requests.RequestException as exc:
-        log_event({"ac": ac, "part": part, "status": "error", "detail": str(exc)})
-        with _stats_lock:
-            _stats["failed"] += 1
-        record_result(ac, part, "failed", str(exc), is_probe=is_probe)
-        return "failed"
+        return "retry", str(exc), 0
 
     try:
         if r.status_code == 404:
-            with _stats_lock:
-                _stats["missing_404"] += 1
-            record_result(ac, part, "missing", "HTTP 404", is_probe=is_probe)
-            return "missing"
+            return "missing", "HTTP 404", 0
         if r.status_code != 200:
-            log_event({"ac": ac, "part": part, "status": "bad_response",
-                        "http_status": r.status_code})
-            with _stats_lock:
-                _stats["failed"] += 1
-            record_result(ac, part, "failed", f"HTTP {r.status_code}", is_probe=is_probe)
-            return "failed"
+            return "failed", f"HTTP {r.status_code}", 0
 
         tmp_dest = dest.with_suffix(dest.suffix + ".part")
         size = 0
@@ -393,37 +374,90 @@ def download_one(session, ac: str, part: int, is_probe: bool = False) -> str:
                         continue
                     if first_chunk:
                         if not chunk.startswith(b"%PDF-"):
-                            log_event({"ac": ac, "part": part, "status": "bad_response",
-                                        "http_status": r.status_code, "detail": "no %PDF- header"})
-                            with _stats_lock:
-                                _stats["failed"] += 1
-                            record_result(ac, part, "failed", "no %PDF- header in response", is_probe=is_probe)
-                            return "failed"
+                            return "failed", "no %PDF- header in response", 0
                         first_chunk = False
                     f.write(chunk)
                     size += len(chunk)
         except requests.RequestException as exc:
             # timeout / connection drop PARTWAY through the body — this is
-            # the case the old code missed. Treat exactly like any other
-            # failed download: log it, clean up the partial file, move on.
-            log_event({"ac": ac, "part": part, "status": "error",
-                        "detail": f"body read failed: {exc}"})
-            with _stats_lock:
-                _stats["failed"] += 1
-            record_result(ac, part, "failed", f"body read failed: {exc}", is_probe=is_probe)
-            return "failed"
+            # the case an earlier version missed entirely (it wasn't even
+            # caught, let alone retried — see the comment history in git/
+            # chat for the "AC 86 raised: ... Read timed out" bug this
+            # replaced). Transient, so it's retryable.
+            return "retry", f"body read failed: {exc}", 0
         finally:
             if first_chunk:  # loop never ran, or we bailed before writing — nothing valid written
                 tmp_dest.unlink(missing_ok=True)
 
         tmp_dest.rename(dest)
-        with _stats_lock:
-            _stats["done"] += 1
-            _stats["bytes"] += size
-        record_result(ac, part, "ok", is_probe=is_probe)
-        return "ok"
+        return "ok", "", size
     finally:
         r.close()
+
+
+def download_one(session, ac: str, part: int, is_probe: bool = False) -> str:
+    """Returns 'ok' | 'skipped' | 'missing' | 'failed'.
+
+    is_probe=True means this part number is beyond the CSV's known part
+    count for this AC (an overflow probe, checking whether the AC
+    actually has more parts than the CSV says). A 404 there is the
+    EXPECTED, normal outcome, not a real failure, so probe results are
+    never written to failed_or_missing.csv — only genuine failures/404s
+    within the AC's known part range are.
+
+    Streams the response straight to disk (stream=True + iter_content)
+    instead of buffering the whole PDF in memory via r.content, so
+    raising --concurrency doesn't balloon RAM use. Checks the %PDF-
+    header on the first chunk and bails out (deleting the partial .part
+    file) before most of a bad response has even been written.
+
+    Retries transient failures (timeout / connection drop, at connect
+    time or mid-download) up to MAX_ATTEMPTS times with a short backoff
+    before giving up — see _attempt_download(). A real 404 or a non-PDF
+    response is NOT retried, since trying the identical request again
+    isn't expected to produce a different result."""
+    dest = local_path(ac, part)
+    if is_valid_pdf(dest):
+        with _stats_lock:
+            _stats["skipped"] += 1
+        record_result(ac, part, "skipped", is_probe=is_probe)
+        return "skipped"
+
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    url = pdf_url(ac, part)
+
+    status, detail, size = "retry", "", 0
+    for attempt in range(1, MAX_ATTEMPTS + 1):
+        status, detail, size = _attempt_download(session, url, dest)
+        if status != "retry":
+            break
+        if attempt < MAX_ATTEMPTS:
+            time.sleep(RETRY_BACKOFF_BASE * attempt)
+    else:
+        pass  # loop exhausted without a non-retry status — status stays "retry"
+
+    if status == "retry":  # every attempt was transient — report as a real failure now
+        status = "failed"
+        detail = f"{detail} (still failing after {MAX_ATTEMPTS} attempts)"
+
+    if status == "missing":
+        with _stats_lock:
+            _stats["missing_404"] += 1
+        record_result(ac, part, "missing", detail, is_probe=is_probe)
+        return "missing"
+
+    if status == "failed":
+        log_event({"ac": ac, "part": part, "status": "error", "detail": detail})
+        with _stats_lock:
+            _stats["failed"] += 1
+        record_result(ac, part, "failed", detail, is_probe=is_probe)
+        return "failed"
+
+    with _stats_lock:
+        _stats["done"] += 1
+        _stats["bytes"] += size
+    record_result(ac, part, "ok", is_probe=is_probe)
+    return "ok"
 
 
 def build_job_list(target_acs: dict):
