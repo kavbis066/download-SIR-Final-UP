@@ -1,7 +1,70 @@
 #!/usr/bin/env python3
 """
-ocr_extract_paddleocr.py (v8) -- fast extraction pipeline, rebuilt on the
+ocr_extract_paddleocr.py (v9) -- fast extraction pipeline, rebuilt on the
 architecture from your colleague's parse_roll.py.
+
+WHAT ELSE CHANGED IN v9 -- some ACs (confirmed: AC 1) produce 0 cards /
+an empty output CSV, with no error
+----------------------------------------------------------------------
+Root cause: page_images() in ocr_extract.py pulls each page's single
+embedded image out of the PDF at ITS NATIVE RESOLUTION (no fixed DPI) --
+and find_cards()/cut_card()/match() all assume one FIXED pixel size for
+everything (card ≈300x124px, page ≈949px wide, calibrated against AC 86's
+PDFs). AC 1's PDFs happen to embed their page image at 1.25x that
+resolution (1187px wide instead of 949px) -- confirmed directly on the
+file you sent: find_cards() found 0 cards on every page at native
+resolution, but found all 30/page once the page was rescaled to 949px
+wide. Different ACs' source PDFs can apparently come out of ECI's
+generator at different native resolutions, and this pipeline silently
+produces an empty CSV for any AC where that resolution isn't ~949px --
+no error, no warning, just nothing in the output.
+
+Fixed with a new page_images_calibrated() in ocr_extract.py (added
+alongside page_images(), not editing that byte-exact function) that
+rescales any page to the calibrated 949px width before find_cards() ever
+sees it. ocr_extract_paddleocr.py's process_pdf() now calls that instead
+of page_images() directly. Verified AC 86 is byte-identical before/after
+(no regression -- its pages are already ~949px so nothing gets rescaled),
+and that AC 1's PDF now extracts cards correctly end-to-end instead of 0.
+
+If you still see 0 cards for some other AC after this, it likely means
+that AC's native resolution is far enough from 949px that scaling alone
+isn't the full story (e.g. a genuinely different physical page layout)
+-- send me that PDF and I'll check the same way.
+
+WHAT CHANGED IN v9 -- wrong names/relation names on conjunct-heavy words
+(न्द्र, र्, etc.), e.g. "रवींद्र" read as "र्वीद्र", "रूप चन्द्र" read as
+"रूप चनद्र"
+----------------------------------------------------------------------
+Found via the names_crosscheck review: errors clustered almost entirely
+around one family of Devanagari conjuncts (न्द्र / ेन्द्र / र्द्र -- the
+"-endra" cluster common in names like Rajendra, Devendra, Ravindra,
+Dharmendra...). Checked the actual crops ocr_extract.py hands to the OCR
+model for several of these flagged cards (AC 86, part 10, page 3, cards
+3/5/11/16) by saving them to PNG and looking directly -- the crops are
+correctly positioned and perfectly legible (e.g. "रूप चन्द्र" and "रवींद्र"
+are both clearly readable in the saved crop). So this was NOT a cropping
+or line-detection bug -- the single Hindi recognition model itself was
+confidently misreading an correctly-cropped, legible conjunct.
+
+Fixed by running Hindi name/relation_name fields through BOTH available
+Hindi models (devanagari_PP-OCRv5_mobile_rec and _v3_mobile_rec) instead
+of just whichever loads first, and keeping whichever reading scores
+higher per field -- the same way a stamped vs. destamped "~" alt crop was
+already being picked by score. When the two models disagree even if the
+winning one still has a high score, the row is flagged
+"name_model_disagreement" / "relation_name_model_disagreement" so it
+surfaces for manual review even in cases the single-model confidence
+score alone wouldn't have caught (a model can be confidently wrong).
+Automatically falls back to single-model behavior (no behavior change)
+if only one Hindi model is available in your environment. Costs roughly
+2x the Hindi OCR time; English/numeric fields (serial, epic, age) are
+unaffected and stay on one model.
+
+This does not guarantee perfect names -- it's a second opinion, not a
+different crop -- but it should catch a meaningful share of these, and
+flags the rest for the needs_review column instead of silently shipping
+a wrong name at high confidence.
 
 WHAT CHANGED IN v8 -- status_code showing "?" and gender going blank
 on real, correctly-matched cards
@@ -120,7 +183,7 @@ import pandas as pd
 
 import ocr_extract as base
 
-VERSION = "v8"
+VERSION = "v9"
 
 TPL_MIN, TPL_MARGIN = base.TPL_MIN, base.TPL_MARGIN
 REVIEW_BELOW = 0.90  # confirmed against your colleague's CSV in earlier versions
@@ -173,11 +236,30 @@ def clean_name_field(raw: str) -> str:
 # the cleaning/schema layer on top is ours.
 # ---------------------------------------------------------------------------
 
-def process_pdf(pdf_path: pathlib.Path, hi, en, log=print, dump_review=False, review_dir=None):
+def process_pdf(pdf_path: pathlib.Path, hi_models, en, log=print, dump_review=False, review_dir=None):
+    """hi_models: list of (model, name) tuples -- one or more loaded Hindi
+    TextRecognition models (see base.load_rec_all). When more than one is
+    given, every Hindi field crop is OCR'd through ALL of them and the
+    highest-scoring reading wins (see get() below), the same way a
+    stamped/destamp "~" alt crop is already picked by score today.
+
+    Why: visually confirmed against real cards (page 3 of AC 86 part 10 --
+    see the names_crosscheck review) that a SINGLE Hindi model can
+    confidently misread a correctly-cropped, legible conjunct -- e.g. the
+    crop plainly shows "रवींद्र" but the model returns "र्वीद्र", or shows
+    "रूप चन्द्र" but returns "रूप चनद्र" (dropped halant). The crop is not
+    the problem in these cases -- cutting a taller/different window
+    wouldn't fix it. A second model's independent reading, picked by score,
+    catches many of these without touching the cropping/template code at
+    all. Costs roughly 2x the Hindi OCR time (not the English/numeric
+    fields, which aren't affected by this and stay on one model); falls
+    back to single-model behavior automatically if only one Hindi model is
+    available in this environment.
+    """
     meta = base.parse_filename(pdf_path)
     cards = []
     t0 = time.time()
-    for pno, g, npg in base.page_images(str(pdf_path)):
+    for pno, g, npg in base.page_images_calibrated(str(pdf_path)):
         if pno < 2 or pno == npg - 1:
             continue
         log(f"    cutting cards: page {pno + 1}/{npg}")
@@ -204,19 +286,59 @@ def process_pdf(pdf_path: pathlib.Path, hi, en, log=print, dump_review=False, re
                     jobs["en"].append((k, fld, im))
 
     log(f"    {len(cards)} cards found, running OCR...")
-    for lang, model in (("hi", hi), ("en", en)):
-        name = "Hindi" if lang == "hi" else "English"
-        imgs = [j[2] for j in jobs[lang]]
-        if not imgs:
-            continue
-        for (k, fld, _), res in zip(jobs[lang], base.run_rec(model, imgs, name)):
-            cards[k][lang][fld] = res
+    # English/numeric fields: one model, same as before.
+    imgs = [j[2] for j in jobs["en"]]
+    if imgs:
+        for (k, fld, _), res in zip(jobs["en"], base.run_rec(en, imgs, "English")):
+            cards[k]["en"][fld] = res
+
+    # Hindi fields: run through every loaded Hindi model. Index 0's result
+    # is stored under the plain field name (e.g. "name") for backward
+    # compatibility; model i>=1's result is stored under "name#i". get()
+    # below picks whichever scored highest across all of them.
+    imgs = [j[2] for j in jobs["hi"]]
+    if imgs:
+        for i, (model, mname) in enumerate(hi_models):
+            label = "Hindi" if i == 0 else f"Hindi(#{i} {mname})"
+            for (k, fld, _), res in zip(jobs["hi"], base.run_rec(model, imgs, label)):
+                key = fld if i == 0 else f"{fld}#{i}"
+                cards[k]["hi"][key] = res
 
     rows, prev = [], None
     for cd in cards:
         H, E, info = cd["hi"], cd["en"], cd["info"]
         why, sc = [], []
-        get = lambda d, k: max(d.get(k, ("", 0.0)), d.get(k + "~", ("", 0.0)), key=lambda t: t[1])
+        # Picks the highest-scoring reading for field `k` among every
+        # variant present in `d`: the plain crop (k), the destamp-alt crop
+        # (k~), and -- for Hindi fields now that >1 model may have run --
+        # each extra model's reading of either crop (k#1, k~#1, k#2, ...).
+        # Falls back to the old two-candidate behavior automatically when
+        # only one Hindi model loaded (no "#N" keys exist at all then).
+        _field_re_cache = {}
+        def get(d, k):
+            pat = _field_re_cache.get(k)
+            if pat is None:
+                pat = _field_re_cache[k] = re.compile(r"^" + re.escape(k) + r"(~)?(#\d+)?$")
+            best = ("", 0.0)
+            for key, val in d.items():
+                if pat.match(key) and val[1] > best[1]:
+                    best = val
+            return best
+
+        def model_disagreement(d, k):
+            """True if two different Hindi models produced different
+            non-empty cleaned readings for this field, both with some real
+            confidence -- a useful review signal even when each model's own
+            score looked fine on its own (a confidently-wrong single-model
+            read, like रवींद्र -> र्वीद्र, doesn't trigger low_ocr_confidence,
+            but a second model disagreeing with it does flag something)."""
+            texts = set()
+            for key, (txt, score) in d.items():
+                if key == k or key.startswith(k + "#"):
+                    t = clean_name_field(txt)
+                    if t and score >= 0.5:
+                        texts.add(t)
+            return len(texts) > 1
 
         st, ss = get(E, "serial")
         dg = re.sub(r"\D", "", st.upper().translate(str.maketrans("OIL", "011")))
@@ -260,9 +382,13 @@ def process_pdf(pdf_path: pathlib.Path, hi, en, log=print, dump_review=False, re
         sc.append(ns)
         if not name:
             why.append("name_missing")
+        elif model_disagreement(H, "name"):
+            why.append("name_model_disagreement")
         rname_raw, rs = get(H, "relation_name")
         rname = clean_name_field(rname_raw)
         sc.append(rs)
+        if rname and model_disagreement(H, "relation_name"):
+            why.append("relation_name_model_disagreement")
 
         lab, s, m = info["relation"]
         if s >= TPL_MIN and m >= TPL_MARGIN:
@@ -366,9 +492,12 @@ _WORKER = {}
 
 def _worker_init(device, cpu_threads):
     _limit_threads(cpu_threads)
-    hi, hname = base.load_rec(base.HI_MODELS, device)
+    hi_models = base.load_rec_all(base.HI_MODELS, device)
+    if not hi_models:
+        raise RuntimeError(f"none of {base.HI_MODELS} could be loaded")
     en, _ = base.load_rec(base.EN_MODELS, device)
-    _WORKER["hi"], _WORKER["en"], _WORKER["hname"] = hi, en, hname
+    _WORKER["hi"], _WORKER["en"] = hi_models, en
+    _WORKER["hname"] = "+".join(m for _, m in hi_models)
 
 
 def _worker_process_pdf(pdf_path_str, out_csv_str):
@@ -461,16 +590,21 @@ def main():
     _limit_threads(args.cpu_threads)
     print("Loading OCR models (Hindi + English TextRecognition, recognition-only -- no detection model)...")
     t0 = time.time()
-    hi, hname = base.load_rec(base.HI_MODELS, args.device)
+    hi_models = base.load_rec_all(base.HI_MODELS, args.device)
+    if not hi_models:
+        raise RuntimeError(f"none of {base.HI_MODELS} could be loaded")
     en, _ = base.load_rec(base.EN_MODELS, args.device)
-    if "v3" in hname.lower():
-        print("[warn] Hindi model is the older PP-OCRv3. For better names: pip install -U paddleocr",
+    if len(hi_models) == 1 and "v3" in hi_models[0][1].lower():
+        print("[warn] Hindi model is the older PP-OCRv3 only. For better names: pip install -U paddleocr",
               file=sys.stderr)
+    elif len(hi_models) > 1:
+        print(f"  Hindi: running {len(hi_models)} models as a vote ({', '.join(m for _, m in hi_models)}) "
+              f"-- highest-confidence reading wins per field.")
     print(f"  loaded in {time.time()-t0:.1f}s")
 
     pdf_path = pathlib.Path(args.pdf)
     t0 = time.time()
-    df = process_pdf(pdf_path, hi, en)
+    df = process_pdf(pdf_path, hi_models, en)
     elapsed = time.time() - t0
     print(f"Done: {len(df)} cards in {elapsed:.1f}s ({elapsed/max(len(df),1):.2f}s/card)")
 

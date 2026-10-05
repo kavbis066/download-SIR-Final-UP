@@ -170,6 +170,49 @@ def find_cards(g):
         if not any(abs(b[0] - o[0]) < 10 and abs(b[1] - o[1]) < 10 for o in out): out.append(b)
     return out
 
+# ---------------------------------------------------------------------------
+# page_images_calibrated() — added on top of page_images() without ever
+# touching that function (same non-invasive-overlay policy as the extra
+# template loader above: page_images is part of the byte-exact block copied
+# from parse_roll.py and stays exactly as copied).
+#
+# WHY THIS EXISTS: page_images() extracts each page's single embedded image
+# at ITS NATIVE RESOLUTION when the page has exactly one (fitz.Pixmap(doc,
+# imgs[0][0]), no dpi= given) — it only falls back to a fixed `dpi=115`
+# render when a page has zero or multiple embedded images. find_cards(),
+# text_lines(), cut_card(), and match() all assume a FIXED pixel size for
+# everything (card ≈300x124px, page ≈949px wide — the resolution every one
+# of their hardcoded offsets/thresholds is tuned to, confirmed against
+# AC 86's PDFs). If a PDF's embedded page image happens to be at a
+# different native resolution, find_cards() silently finds ZERO cards on
+# every page — no error, no crash, just an empty output CSV.
+#
+# Confirmed directly: AC 86's PDFs render page 3 at 949x1343px (30/30 cards
+# found). AC 1's PDF (downloads/1/...HIN-1-WI.pdf, the one that produced
+# "0 cards found, running OCR..." for all 38 body pages) renders the same
+# page at 1187x1679px — exactly 1.25x larger — and find_cards() returns 0
+# cards on every single page of it. Resizing that page back down to 949px
+# wide before calling find_cards() immediately finds all 30 cards/page,
+# confirming this is the root cause, not a one-off bad file.
+#
+# This wrapper rescales every page to the calibrated 949px width (uniform
+# scale, aspect ratio preserved) before any downstream pixel code sees it,
+# so find_cards()/cut_card()/match()'s fixed pixel assumptions hold
+# regardless of what resolution a given AC's source PDFs happen to be at.
+# A page already at (or very near) the calibrated width is left alone —
+# this never changes AC 86's behavior, which is why its PDFs were used to
+# confirm nothing regresses.
+# -----------------------------------------------------------------------
+CALIBRATED_PAGE_WIDTH = 949  # the pixel width find_cards()/cut_card()/match()'s hardcoded offsets assume
+
+def page_images_calibrated(pdf, target_width=CALIBRATED_PAGE_WIDTH, tol=0.02):
+    for i, g, npg in page_images(pdf):
+        w = g.shape[1]
+        if abs(w - target_width) > target_width * tol:
+            scale = target_width / w
+            g = cv2.resize(g, (target_width, round(g.shape[0] * scale)), interpolation=cv2.INTER_AREA)
+        yield i, g, npg
+
 def runs(mask):
     idx = np.flatnonzero(mask)
     if not len(idx): return []
@@ -305,6 +348,30 @@ def load_rec(candidates, device):
         except Exception as e:
             print(f"[model] {m} unavailable ({type(e).__name__}: {str(e)[:80]})", file=sys.stderr)
     raise RuntimeError(f"none of {candidates} could be loaded")
+
+def load_rec_all(candidates, device):
+    """Like load_rec(), but loads every candidate that's available instead of
+    stopping at the first success. Used to run two Hindi recognition models
+    (v5 + v3 mobile) as a second opinion on name/relation_name — verified
+    against real cards that these models can confidently misread a correctly
+    cropped, legible conjunct (e.g. रवींद्र -> र्वीद्र, चन्द्र -> चनद्र): the
+    crop isn't the problem, the single model's reading sometimes is. A second
+    model voting (highest score wins, picked the same way the existing
+    stamped/destamp "~" alt crop is already picked in process_pdf's get())
+    costs double the Hindi-field OCR time but doesn't touch the sensitive
+    cropping/template code at all. Returns a list of (model, name) for every
+    candidate that loaded; empty list if none did (caller decides how to
+    treat that — see run_rec_voted below)."""
+    from paddleocr import TextRecognition
+    loaded = []
+    for m in candidates:
+        try:
+            r = TextRecognition(model_name=m, device=device) if device else TextRecognition(model_name=m)
+            print(f"[model] loaded {m}", file=sys.stderr)
+            loaded.append((r, m))
+        except Exception as e:
+            print(f"[model] {m} unavailable ({type(e).__name__}: {str(e)[:80]})", file=sys.stderr)
+    return loaded
 
 def run_rec(model, imgs, label="", bs=64, chunk=500):
     out, n, t0 = [], len(imgs), time.time()
