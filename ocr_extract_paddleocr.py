@@ -1,6 +1,54 @@
 #!/usr/bin/env python3
 """
-ocr_extract_paddleocr.py (v11) -- fast extraction pipeline.
+ocr_extract_paddleocr.py (v13) -- fast extraction pipeline.
+
+WHAT CHANGED IN v13 (on top of v12, below) -- joined names, garbled names, stray marks
+----------------------------------------------------------------------
+Measured on the AC 2 part-2 CSV (688 cards): where the two Hindi models disagreed
+(~900 name / relation-name fields) the older v3 model won the score vote in 236 of
+them, and was wrong in nearly all: dropped conjuncts (बुद्धराम -> बुदराम), moved matras
+(ललित -> लिलत, साजिद अली -> सिजदअली), merged words (लालो मोची -> लालोमोची), a stray
+"े" (हरपाल -> हरपालने, युसुफ -> युसुफे) -- and it reports 1.00 confidence on many of them.
+ * get_name(): the primary v5 model is trusted; v3 can only win when v5 produced
+   nothing usable or v3 beats it by V3_NEEDS_MARGIN (0.15). If two readings differ only
+   by spaces, the one WITH spaces is kept (first name / last name no longer merge).
+ * --second-opinion auto (default): v3 only re-reads crops where v5 scored < 0.90, was
+   too short, or produced a word that cannot start that way. Confident v5 reads skip v3
+   entirely, so Hindi OCR time drops by roughly 40%. 'all' = v11 behaviour, 'off' = never.
+ * Words starting with nasal + halant + stop consonant (न्दू, म्ब...) cannot occur in
+   Hindi -- they mean a dropped first letter. Flagged name_invalid_start /
+   relation_name_invalid_start and sent through the re-crop retry.
+ * Decomposed independent vowels (अा, अाे, अाै) are recomposed to आ, ओ, औ.
+
+--- v12 notes ---
+
+ocr_extract_paddleocr.py (v12) -- fast extraction pipeline.
+
+WHAT CHANGED IN v12 (on top of v11, below)
+----------------------------------------------------------------------
+ * Wrong marks in names ("सपना" read as "सपनाे", "रीनाे"): verified on AC 2 that the
+   crops sent to the model are perfect, so this is the Hindi model hallucinating.
+   clean_hindi() now applies a Devanagari orthography guard (ocr_extract.
+   normalize_devanagari): a consonant takes one vowel sign, a halant must follow
+   a consonant, no leading vowel sign / trailing halant ... impossible marks are dropped.
+ * Dropped letters ("नन्दू" -> "न्दू", "जयपाल" -> "यपाल"): a vocabulary built from
+   YOUR OWN confident reads (names and relation names share it) repairs a RARE token
+   that is exactly one inserted/removed character away from a COMMON one. Never
+   substitutions (रीना/रीता are never merged), thresholds in VOCAB_*. Every change
+   is flagged name_vocab_fixed / relation_name_vocab_fixed and logged in the new
+   autocorrect_log column. The vocabulary persists in name_vocab.json (--vocab) and
+   improves with every AC you run -- keep using the same file. --no-vocab disables it.
+ * --folder now processes files in NATURAL order (1, 2, 3 ... 10 ... 100), so --limit 30
+   takes parts 1-30, and _combined.csv rows are written in that order even when
+   workers finish out of order.
+ * --upload s3://bucket/prefix [--s3-endpoint URL] [--presign-hours N]: uploads
+   <prefix>/<folder>/_combined.csv (+ _run_info.json, _failed.txt) with server-side
+   encryption; works with S3 and S3-compatible stores (Cloudflare R2, MinIO, B2).
+   Needs `pip install boto3` and credentials in the environment / ~/.aws (never in code).
+ * Batch mode writes _combined.partial.csv while running (kept if you interrupt),
+   then the final _combined.csv after the vocabulary pass.
+
+--- v11 notes ---
 
 WHAT CHANGED IN v11 -- ACs other than 86 (AC 1, AC 2, ...): missing/truncated
 serial numbers (24, 25 -> "2"), one-letter / half names, stray . , - in names,
@@ -281,7 +329,7 @@ import pandas as pd
 
 import ocr_extract as base
 
-VERSION = "v11"
+VERSION = "v13"
 
 TPL_MIN, TPL_MARGIN = base.TPL_MIN, base.TPL_MARGIN
 REVIEW_BELOW = 0.90  # confirmed against your colleague's CSV in earlier versions
@@ -312,11 +360,13 @@ FIELDNAMES = [
     "list_type", "addition_section_no", "file_name", "pdf_page", "card_on_page",
     "confidence", "needs_review", "review_reason",
     # extra audit columns beyond your colleague's schema -- safe to delete in Excel
-    "raw_ocr_body", "stamp_px",
+    "raw_ocr_body", "stamp_px", "autocorrect_log",
 ]
 
 SHORT_NAME_BELOW = 2       # a cleaned name shorter than this is treated as a mis-crop
 RETRY_SCORE_BELOW = 0.60   # ... and so is a name/relation_name read below this score
+SECOND_OPINION_BELOW = 0.90  # v5 read scoring below this (or short / invalid start) also gets the v3 model
+V3_NEEDS_MARGIN = 0.15       # a v3 reading must beat the v5 reading by this much to be used (v3 is overconfident)
 _OIL = str.maketrans("OIL|", "0111")
 
 
@@ -450,7 +500,8 @@ def extract_cards(pdf_path, log=print):
     return cards, time.time() - t0
 
 
-def process_pdf(pdf_path: pathlib.Path, hi_models, en, log=print, dump_review=False, review_dir=None):
+def process_pdf(pdf_path: pathlib.Path, hi_models, en, log=print, dump_review=False, review_dir=None,
+                second_opinion="auto"):
     """hi_models: list of (model, name) tuples -- one or more loaded Hindi
     TextRecognition models (see base.load_rec_all). Every Hindi field crop is
     OCR'd through ALL of them and the highest-scoring reading wins (see get()
@@ -490,15 +541,14 @@ def process_pdf(pdf_path: pathlib.Path, hi_models, en, log=print, dump_review=Fa
         for (k, fld, _), res in zip(jobs["en"], base.run_rec(en, imgs, "English")):
             cards[k]["en"][fld] = res
 
-    # Hindi fields: every loaded model. Model 0's result is stored under the
-    # plain field name ("name"); model i>=1 under "name#i".
+    # Hindi fields: the primary model (v5) reads every crop. The second model (v3)
+    # is only consulted where v5 looks unsure -- see "second opinion" below.
+    # Model 0's result is stored under the plain field name ("name"); model i>=1
+    # under "name#i".
     imgs = [j[2] for j in jobs["hi"]]
-    if imgs:
-        for i, (model, mname) in enumerate(hi_models):
-            label = "Hindi" if i == 0 else f"Hindi(#{i} {mname})"
-            for (k, fld, _), res in zip(jobs["hi"], base.run_rec(model, imgs, label)):
-                key = fld if i == 0 else f"{fld}#{i}"
-                cards[k]["hi"][key] = res
+    if imgs and hi_models:
+        for (k, fld, _), res in zip(jobs["hi"], base.run_rec(hi_models[0][0], imgs, "Hindi")):
+            cards[k]["hi"][fld] = res
 
     # ------------------------------------------------------------------
     # Candidate picking (shared by the retry stage and the row builder)
@@ -520,21 +570,80 @@ def process_pdf(pdf_path: pathlib.Path, hi_models, en, log=print, dump_review=Fa
                 best = val
         return best
 
-    def get_name(d, k):
-        """Like get(), but if the winner cleans down to < SHORT_NAME_BELOW
-        characters (the half-letter symptom) a longer reading wins instead."""
-        pat = key_re(k)
+    def _nlen(txt):
+        return len(clean_name_field(txt).replace(" ", ""))
+
+    def _best(items):
+        """Highest score wins (first one on ties); a reading that cleans to < SHORT_NAME_BELOW
+        characters only wins if nothing longer exists."""
         best, best_ok = ("", 0.0), ("", 0.0)
-        for key, val in d.items():
-            if not pat.match(key):
-                continue
+        for _, val in items:
             if val[1] > best[1]:
                 best = val
-            if val[1] > best_ok[1] and len(clean_name_field(val[0]).replace(" ", "")) >= SHORT_NAME_BELOW:
+            if val[1] > best_ok[1] and _nlen(val[0]) >= SHORT_NAME_BELOW:
                 best_ok = val
-        if len(clean_name_field(best[0]).replace(" ", "")) < SHORT_NAME_BELOW and best_ok[1] > 0:
+        if _nlen(best[0]) < SHORT_NAME_BELOW and best_ok[1] > 0:
             return best_ok
         return best
+
+    def get_name(d, k):
+        """Pick the reading for a name / relation_name field.
+
+        The primary (v5) model's readings -- plain crop, destamped crop, re-crops -- are
+        compared among themselves. The secondary (v3) model is NOT allowed to win by
+        score alone: on real AC 2 data it won ~25% of the disagreements and was wrong in
+        almost all of them (dropped conjuncts, moved matras, merged words, a stray 'े',
+        and confident 1.00 scores on wrong text). It is used only when v5 produced nothing
+        usable, or when it beats v5 by V3_NEEDS_MARGIN.
+        Finally, if two readings are identical apart from spaces, the one with spaces wins
+        (first name / last name stay separate: 'लालो मोची', not 'लालोमोची')."""
+        pat = key_re(k)
+        items = [(key, val) for key, val in d.items() if pat.match(key)]
+        prim = [it for it in items if "#" not in it[0]]
+        sec = [it for it in items if "#" in it[0]]
+        p, s2 = _best(prim), _best(sec)
+        p_ok = p[1] > 0 and _nlen(p[0]) >= SHORT_NAME_BELOW and p[1] >= 0.5
+        if p_ok:
+            chosen = s2 if (s2[1] >= p[1] + V3_NEEDS_MARGIN and _nlen(s2[0]) >= SHORT_NAME_BELOW) else p
+        elif p[1] > 0 and s2[1] < p[1] + V3_NEEDS_MARGIN:
+            chosen = p
+        else:
+            chosen = _best(items)
+        ct = clean_name_field(chosen[0])
+        if ct and " " not in ct:
+            for _, val in items:
+                c2 = clean_name_field(val[0])
+                if " " in c2 and c2.replace(" ", "") == ct and val[1] >= 0.8:
+                    return (val[0], chosen[1])
+        return chosen
+
+    # ------------------------------------------------------------------
+    # Second opinion: the v3 model reads name / relation_name crops only where v5 is
+    # unsure (score < SECOND_OPINION_BELOW, too short, or a word that cannot start that way).
+    # second_opinion="all" restores v11's behaviour (v3 on everything), "off" disables it.
+    # Skipping v3 on confident reads also removes roughly half of the Hindi OCR time.
+    # ------------------------------------------------------------------
+    n_second = 0
+    if len(hi_models) > 1 and second_opinion != "off":
+        weak = {}
+
+        def is_weak(k, f):
+            key = (k, f)
+            if key not in weak:
+                txt, sc_ = get_name(cards[k]["hi"], f)
+                ct = clean_name_field(txt)
+                weak[key] = (second_opinion == "all" or sc_ < SECOND_OPINION_BELOW
+                             or len(ct.replace(" ", "")) < SHORT_NAME_BELOW or base.invalid_word_start(ct))
+            return weak[key]
+
+        sel = [(k, fld, im) for (k, fld, im) in jobs["hi"]
+               if fld.rstrip("~") in ("name", "relation_name") and is_weak(k, fld.rstrip("~"))]
+        n_second = len({j[0] for j in sel})
+        if sel:
+            for i, (model, mname) in enumerate(hi_models[1:], 1):
+                for (k, fld, _), res in zip(sel, base.run_rec(model, [j[2] for j in sel],
+                                                              f"Hindi(#{i} {mname}) second opinion on {n_second} cards")):
+                    cards[k]["hi"][f"{fld}#{i}"] = res
 
     # ------------------------------------------------------------------
     # Retry 1: serial numbers that break the 1,2,3... sequence are re-read
@@ -579,7 +688,8 @@ def process_pdf(pdf_path: pathlib.Path, hi_models, en, log=print, dump_review=Fa
             if not any(pat.match(x) for x in H):
                 continue                     # nothing was inked on this line -> nothing to retry
             txt, sc_ = get_name(H, fld)
-            if len(clean_name_field(txt).replace(" ", "")) < SHORT_NAME_BELOW or sc_ < RETRY_SCORE_BELOW:
+            ct0 = clean_name_field(txt)
+            if len(ct0.replace(" ", "")) < SHORT_NAME_BELOW or sc_ < RETRY_SCORE_BELOW or base.invalid_word_start(ct0):
                 srcs = [cd["img"]] + ([base.destamp(cd["img"], s=cd["s"])] if cd["info"]["stamped"] else [])
                 j = 0
                 for src in srcs:
@@ -590,6 +700,8 @@ def process_pdf(pdf_path: pathlib.Path, hi_models, en, log=print, dump_review=Fa
     n_retry = len({(j[0]) for j in rj})
     if rj:
         for i, (model, mname) in enumerate(hi_models):
+            if i >= 1 and second_opinion == "off":
+                break
             for (k, fld, _), res in zip(rj, base.run_rec(model, [j[2] for j in rj],
                                                            f"Hindi re-crop ({n_retry} cards)" if i == 0 else f"Hindi(#{i}) re-crop")):
                 cards[k]["hi"][fld if i == 0 else f"{fld}#{i}"] = res
@@ -659,6 +771,8 @@ def process_pdf(pdf_path: pathlib.Path, hi_models, en, log=print, dump_review=Fa
             why.append("name_too_short")
         elif model_disagreement(H, "name"):
             why.append("name_model_disagreement")
+        if base.invalid_word_start(name):
+            why.append("name_invalid_start")
         rname_raw, rs = get_name(H, "relation_name")
         rname = clean_name_field(rname_raw)
         sc.append(rs)
@@ -666,6 +780,8 @@ def process_pdf(pdf_path: pathlib.Path, hi_models, en, log=print, dump_review=Fa
             why.append("relation_name_too_short")
         elif rname and model_disagreement(H, "relation_name"):
             why.append("relation_name_model_disagreement")
+        if base.invalid_word_start(rname):
+            why.append("relation_name_invalid_start")
 
         lab, s_, m = info["relation"]
         if s_ >= TPL_MIN and m >= TPL_MARGIN:
@@ -715,12 +831,13 @@ def process_pdf(pdf_path: pathlib.Path, hi_models, en, log=print, dump_review=Fa
             "list_type": info["list_type"], "addition_section_no": sec,
             "file_name": pdf_path.name, "pdf_page": cd["pdf_page"], "card_on_page": cd["card_on_page"],
             "confidence": conf, "needs_review": "Y" if why else "N", "review_reason": "|".join(why),
-            "raw_ocr_body": raw_ocr_body, "stamp_px": info["stamp_px"],
+            "raw_ocr_body": raw_ocr_body, "stamp_px": info["stamp_px"], "autocorrect_log": "",
         })
 
     n_fix = sum(1 for f_ in serial_flag if f_)
     log(f"    done in {time.time() - t0:.0f}s, {len(rows)} cards "
-        f"(serials repaired: {n_fix}, re-read: {n_reread}; names re-cropped: {n_retry})")
+        f"(serials repaired: {n_fix}, re-read: {n_reread}; names re-cropped: {n_retry}; "
+        f"v3 second opinion on {n_second} cards)")
 
     df = pd.DataFrame(rows, columns=FIELDNAMES)
     df["serial_no"] = df["serial_no"].astype("Int64")
@@ -747,8 +864,9 @@ def _limit_threads(n: int):
 _WORKER = {}
 
 
-def _worker_init(device, cpu_threads):
+def _worker_init(device, cpu_threads, second_opinion="auto"):
     _limit_threads(cpu_threads)
+    _WORKER["so"] = second_opinion
     hi_models = base.load_rec_all(base.HI_MODELS, device)
     if not hi_models:
         raise RuntimeError(f"none of {base.HI_MODELS} could be loaded")
@@ -771,16 +889,186 @@ def _worker_process_pdf(pdf_path_str):
         print(f"{tag} {msg}", flush=True)
 
     t0 = time.time()
-    df = process_pdf(pdf_path, _WORKER["hi"], _WORKER["en"], log=log)
+    df = process_pdf(pdf_path, _WORKER["hi"], _WORKER["en"], log=log, second_opinion=_WORKER.get("so", "auto"))
     elapsed = time.time() - t0
     print(f"{tag} done: {len(df)} cards in {elapsed:.1f}s "
           f"({elapsed/max(len(df),1):.2f}s/card)", flush=True)
     return pdf_path.name, df
 
 
+# ---------------------------------------------------------------------------
+# Natural file order  (1, 2, 3 ... 10 ... 100, not 1, 10, 100, 101 ...)
+# ---------------------------------------------------------------------------
+
+def natural_key(path):
+    s = str(path)
+    return [int(x) if x.isdigit() else x.lower() for x in re.split(r"(\d+)", s)]
+
+
+# ---------------------------------------------------------------------------
+# Name vocabulary correction
+#
+# Why: the Hindi recogniser sometimes drops a letter from a conjunct or the
+# first letter of a word ("नन्दू" -> "न्दू", "जयपाल" -> "यपाल") even though the
+# crop is perfect (verified on AC 2). Voter-roll names repeat heavily, so the
+# data itself is the best dictionary: a token that is RARE in the roll but is
+# exactly one inserted/deleted code point away from a COMMON token is almost
+# certainly a misread of it. Every change is flagged (<field>_vocab_fixed) and
+# logged in the autocorrect_log column so it can be audited / reverted.
+#
+# Deliberately conservative: only the insertion of one dropped (non-final)
+# character is tried -- never deletions or substitutions, so real look-alike
+# names (रीना / रीता, राम / रामू, देव / देवी) are never merged. It stays off until
+# the vocabulary holds VOCAB_MIN_TOKENS tokens.
+# ---------------------------------------------------------------------------
+VOCAB_RARE_MAX = 4        # a token seen this many times (or fewer) may be corrected (siblings repeat a misread father's name)
+VOCAB_STRONG_MIN = 8      # ... but only into a token seen at least this often
+VOCAB_RATIO = 6           # ... and at least this many times more often than itself
+VOCAB_MIN_LEN = 3         # never touch very short tokens
+VOCAB_MIN_TOKENS = 4000   # corrector stays OFF until the vocabulary has this many tokens (a single PDF is
+                          # too small to tell a misread from a real rare name: it once "fixed" रामू -> राम)
+
+
+class VocabCorrector:
+    """Restores ONE dropped character. Deliberately never deletes or substitutes
+    (रामू/राम, रीना/रीता are all real names) and never adds a missing LAST letter
+    (देव/देवी, प्रीत/प्रीतम are real names; the model's failure is losing a letter
+    inside a word or at its start, e.g. नन्दू -> न्दू, जयपाल -> यपाल, कुमार -> कमार)."""
+
+    def __init__(self, counts):
+        self.c = counts
+        self.enabled = sum(counts.values()) >= VOCAB_MIN_TOKENS
+        self.strong = {t: n for t, n in counts.items() if n >= VOCAB_STRONG_MIN} if self.enabled else {}
+        self.ins = collections.defaultdict(list)       # token-with-one-char-removed -> strong tokens
+        for tok in self.strong:
+            for i in range(len(tok) - 1):               # i < last index: the final character is never "restored"
+                self.ins[tok[:i] + tok[i + 1:]].append(tok)
+
+    def fix(self, tok):
+        n = self.c.get(tok, 0)
+        if not self.enabled or len(tok) < VOCAB_MIN_LEN or n > VOCAB_RARE_MAX:
+            return tok
+        cands = [v for v in set(self.ins.get(tok, ())) if v != tok and self.strong[v] >= VOCAB_RATIO * max(n, 1)]
+        if not cands:
+            return tok
+        cands.sort(key=lambda v: -self.strong[v])
+        if len(cands) > 1 and self.strong[cands[0]] < 2 * self.strong[cands[1]]:
+            return tok                                                             # ambiguous -> leave it
+        return cands[0]
+
+
+def build_vocab(df, base_counts=None):
+    """Token counts from confident rows (names and relation names share a vocabulary)."""
+    c = collections.Counter(base_counts or {})
+    conf = pd.to_numeric(df["confidence"], errors="coerce").fillna(0)
+    rr = df["review_reason"].fillna("")
+    ok = (conf >= REVIEW_BELOW) & ~rr.str.contains("too_short|name_missing|vocab_fixed", regex=True)
+    for col in ("name", "relation_name"):
+        for v in df.loc[ok, col].fillna(""):
+            for tok in str(v).split():
+                if len(tok) >= 2:
+                    c[tok] += 1
+    return c
+
+
+def apply_vocab(df, counts):
+    """Returns (df, n_fixed). Operates on a copy of the name columns."""
+    vc = VocabCorrector(counts)
+    n_fixed = 0
+    df = df.copy()
+    for col in ("name", "relation_name"):
+        for i, v in zip(df.index, df[col].fillna("").tolist()):
+            toks = str(v).split()
+            fixed = [vc.fix(x) for x in toks]
+            if fixed != toks:
+                n_fixed += 1
+                df.at[i, col] = " ".join(fixed)
+                log_ = "; ".join(f"{col}: {a}>{b}" for a, b in zip(toks, fixed) if a != b)
+                prev = str(df.at[i, "autocorrect_log"]) if str(df.at[i, "autocorrect_log"]) not in ("", "nan") else ""
+                df.at[i, "autocorrect_log"] = (prev + "; " if prev else "") + log_
+                rr = str(df.at[i, "review_reason"]) if str(df.at[i, "review_reason"]) not in ("", "nan") else ""
+                df.at[i, "review_reason"] = (rr + "|" if rr else "") + f"{col}_vocab_fixed"
+                df.at[i, "needs_review"] = "Y"
+    return df, n_fixed
+
+
+def load_vocab(path):
+    try:
+        import json
+        with open(path, encoding="utf-8") as fh:
+            return collections.Counter({k: int(v) for k, v in json.load(fh).items()})
+    except FileNotFoundError:
+        return collections.Counter()
+    except Exception as exc:
+        print(f"[vocab] could not read {path}: {exc} -- starting empty", file=sys.stderr)
+        return collections.Counter()
+
+
+def save_vocab(path, counts):
+    import json
+    tmp = str(path) + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        json.dump(dict(counts.most_common()), fh, ensure_ascii=False)
+    os.replace(tmp, path)
+
+
+def finalize_names(df, vocab_path, log=print):
+    """Vocabulary pass over a finished DataFrame; updates the persistent vocab file."""
+    if vocab_path is None or df.empty:
+        return df
+    loaded = load_vocab(vocab_path)
+    counts = build_vocab(df, loaded)
+    df, n = apply_vocab(df, counts)
+    save_vocab(vocab_path, build_vocab(df, loaded))
+    log(f"  name vocabulary: {n} rows auto-corrected "
+        f"(vocab file {vocab_path}: {len(counts)} tokens before this run's additions: {len(loaded)})")
+    return df
+
+
+# ---------------------------------------------------------------------------
+# Cloud upload (S3 or any S3-compatible store: Cloudflare R2, MinIO, Backblaze B2...)
+# ---------------------------------------------------------------------------
+
+def upload_files(files, dest, endpoint=None, presign_hours=0):
+    """files: {local_path: key_suffix}. dest: s3://bucket/optional/prefix.
+    Credentials come from the normal AWS chain (env vars AWS_ACCESS_KEY_ID /
+    AWS_SECRET_ACCESS_KEY, ~/.aws/credentials, an IAM role) -- never put keys in
+    this file. Never raises: the CSVs are already saved locally."""
+    try:
+        import boto3
+    except ImportError:
+        print("[upload] boto3 not installed: pip install boto3   (files are saved locally)", file=sys.stderr)
+        return
+    m = re.match(r"^s3://([^/]+)/?(.*)$", dest)
+    if not m:
+        print(f"[upload] --upload must look like s3://bucket/prefix, got {dest!r}", file=sys.stderr)
+        return
+    bucket, prefix = m.group(1), m.group(2).strip("/")
+    try:
+        client = boto3.client("s3", endpoint_url=endpoint) if endpoint else boto3.client("s3")
+        extra = {} if endpoint else {"ServerSideEncryption": "AES256"}
+        for local, suffix in files.items():
+            key = f"{prefix}/{suffix}" if prefix else suffix
+            client.upload_file(str(local), bucket, key, ExtraArgs=extra or None)
+            print(f"[upload] s3://{bucket}/{key}")
+            if presign_hours and str(local).endswith(".csv"):
+                url = client.generate_presigned_url("get_object", Params={"Bucket": bucket, "Key": key},
+                                                    ExpiresIn=int(min(presign_hours, 168) * 3600))
+                print(f"[upload]   download link (valid {min(presign_hours, 168)}h): {url}")
+    except Exception as exc:
+        print(f"[upload] FAILED ({type(exc).__name__}: {exc}) -- files are still saved locally", file=sys.stderr)
+
+
+# ---------------------------------------------------------------------------
+# Multi-PDF, multi-process batch mode
+# ---------------------------------------------------------------------------
+
 def run_folder(folder: pathlib.Path, out_dir: pathlib.Path, workers: int,
-               recursive: bool, device, cpu_threads: int, limit=None):
-    pdfs = sorted(folder.rglob("*.pdf") if recursive else folder.glob("*.pdf"))
+               recursive: bool, device, cpu_threads: int, limit=None,
+               vocab_path=None, upload=None, s3_endpoint=None, presign_hours=0, second_opinion="auto"):
+    # natural order: ...-1-WI, ...-2-WI, ...-10-WI, ...-100-WI  (plain sorted() gave 1, 10, 100, 101 ...)
+    pdfs = sorted(folder.rglob("*.pdf") if recursive else folder.glob("*.pdf"),
+                  key=lambda p: natural_key(p.relative_to(folder)))
     if not pdfs:
         print(f"No PDFs found in {folder} (recursive={recursive})")
         return
@@ -789,37 +1077,78 @@ def run_folder(folder: pathlib.Path, out_dir: pathlib.Path, workers: int,
         pdfs = pdfs[:limit]
     out_dir.mkdir(parents=True, exist_ok=True)
     combined_path = out_dir / "_combined.csv"
+    partial_path = out_dir / "_combined.partial.csv"
+    if partial_path.exists():
+        partial_path.unlink()
     limit_note = f" (limited from {total_found} found)" if limit else ""
-    print(f"Found {total_found} PDFs, processing {len(pdfs)}{limit_note}. "
+    print(f"Found {total_found} PDFs, processing {len(pdfs)}{limit_note}, in natural order "
+          f"({pdfs[0].name} ... {pdfs[-1].name}). "
           f"Running with {workers} worker process(es), {cpu_threads} CPU threads each "
           f"(~{workers * cpu_threads} threads total -- watch Activity Monitor)...")
     print(f"Writing one combined CSV only (no per-PDF CSVs): {combined_path}")
 
     header_written = False
     total_rows = processed = 0
+    failed = []
+    done, next_i = {}, 0
+    t_start = time.time()
     with concurrent.futures.ProcessPoolExecutor(
-            max_workers=workers, initializer=_worker_init, initargs=(device, cpu_threads)) as pool:
-        futures = {pool.submit(_worker_process_pdf, str(pdf)): pdf for pdf in pdfs}
+            max_workers=workers, initializer=_worker_init, initargs=(device, cpu_threads, second_opinion)) as pool:
+        futures = {pool.submit(_worker_process_pdf, str(pdf)): i for i, pdf in enumerate(pdfs)}
         for fut in concurrent.futures.as_completed(futures):
-            pdf = futures[fut]
+            i = futures[fut]
             try:
-                name, df = fut.result()
-                df.to_csv(combined_path, mode="a" if header_written else "w",
-                           header=not header_written, index=False, encoding="utf-8-sig")
+                done[i] = fut.result()
+            except Exception as exc:
+                done[i] = None
+                failed.append(pdfs[i].name)
+                print(f"  ! {pdfs[i].name} failed: {exc}", file=sys.stderr)
+            # rows are appended strictly in file order, even when workers finish out of order
+            while next_i in done:
+                res = done.pop(next_i)
+                next_i += 1
+                if res is None:
+                    continue
+                name, df = res
+                df.to_csv(partial_path, mode="a" if header_written else "w",
+                          header=not header_written, index=False, encoding="utf-8-sig")
                 header_written = True
                 total_rows += len(df)
                 processed += 1
                 print(f"  [{processed}/{len(pdfs)}] {name}: {len(df)} cards "
                       f"(combined total: {total_rows})", flush=True)
-            except Exception as exc:
-                print(f"  ! {pdf.name} failed: {exc}", file=sys.stderr)
 
-    if not header_written:
+    if header_written:
+        if vocab_path:
+            allrows = pd.read_csv(partial_path, dtype=str, keep_default_na=False, encoding="utf-8-sig")
+            allrows = finalize_names(allrows, vocab_path)
+            allrows.to_csv(combined_path, index=False, encoding="utf-8-sig")
+            partial_path.unlink()
+        else:
+            os.replace(partial_path, combined_path)
+    else:
         # nothing succeeded -- still write an (empty, header-only) combined
         # CSV so downstream tooling that expects the file to exist doesn't break
         pd.DataFrame(columns=FIELDNAMES).to_csv(combined_path, index=False, encoding="utf-8-sig")
-    print(f"\nDone: {processed}/{len(pdfs)} PDFs processed, {total_rows} total cards.")
+    print(f"\nDone: {processed}/{len(pdfs)} PDFs processed, {total_rows} total cards "
+          f"in {time.time() - t_start:.0f}s.")
+    if failed:
+        (out_dir / "_failed.txt").write_text("\n".join(failed), encoding="utf-8")
+        print(f"FAILED PDFs ({len(failed)}) listed in {out_dir / '_failed.txt'}", file=sys.stderr)
     print(f"Combined CSV: {combined_path}")
+
+    if upload:
+        import json
+        info = {"version": VERSION, "folder": str(folder), "pdfs_processed": processed, "pdfs_failed": failed,
+                "cards": total_rows, "first_pdf": pdfs[0].name, "last_pdf": pdfs[-1].name,
+                "finished_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+        info_path = out_dir / "_run_info.json"
+        info_path.write_text(json.dumps(info, ensure_ascii=False, indent=2), encoding="utf-8")
+        tag = folder.resolve().name
+        files = {combined_path: f"{tag}/_combined.csv", info_path: f"{tag}/_run_info.json"}
+        if failed:
+            files[out_dir / "_failed.txt"] = f"{tag}/_failed.txt"
+        upload_files(files, upload, s3_endpoint, presign_hours)
 
 
 def main():
@@ -843,14 +1172,32 @@ def main():
     ap.add_argument("--out", required=True,
                      help="Single-file mode: output CSV path. --folder mode: output DIRECTORY "
                           "(one combined CSV: _combined.csv)")
+    ap.add_argument("--vocab", default="name_vocab.json",
+                     help="Persistent name vocabulary (JSON) used to repair dropped letters in names; it grows "
+                          "with every run, so keep using the same file across ACs (default: name_vocab.json "
+                          "in the current folder).")
+    ap.add_argument("--second-opinion", choices=("auto", "all", "off"), default="auto",
+                     help="When the second Hindi model (v3) reads name crops: 'auto' (default) = only where the "
+                          "primary v5 reading is unsure -- v3 is much less accurate and roughly doubles Hindi OCR "
+                          "time; 'all' = every crop (v11 behaviour); 'off' = never.")
+    ap.add_argument("--no-vocab", action="store_true", help="Disable the vocabulary correction pass.")
+    ap.add_argument("--upload", metavar="s3://BUCKET/PREFIX",
+                     help="After the run, upload the CSV to S3 (or any S3-compatible store) under "
+                          "PREFIX/<folder-name>/_combined.csv. Needs `pip install boto3` and AWS credentials "
+                          "in the environment / ~/.aws.")
+    ap.add_argument("--s3-endpoint", help="Custom endpoint for S3-compatible stores (Cloudflare R2, MinIO, B2).")
+    ap.add_argument("--presign-hours", type=int, default=0,
+                     help="With --upload, also print a temporary download link valid this many hours (max 168).")
     args = ap.parse_args()
+    vocab_path = None if args.no_vocab else args.vocab
 
     if not args.pdf and not args.folder:
         ap.error("provide a PDF file, or --folder for batch mode")
 
     if args.folder:
         run_folder(pathlib.Path(args.folder), pathlib.Path(args.out), args.workers,
-                   args.recursive, args.device, args.cpu_threads, args.limit)
+                   args.recursive, args.device, args.cpu_threads, args.limit,
+                   vocab_path, args.upload, args.s3_endpoint, args.presign_hours, args.second_opinion)
         return
 
     _limit_threads(args.cpu_threads)
@@ -870,12 +1217,15 @@ def main():
 
     pdf_path = pathlib.Path(args.pdf)
     t0 = time.time()
-    df = process_pdf(pdf_path, hi_models, en)
+    df = process_pdf(pdf_path, hi_models, en, second_opinion=args.second_opinion)
     elapsed = time.time() - t0
     print(f"Done: {len(df)} cards in {elapsed:.1f}s ({elapsed/max(len(df),1):.2f}s/card)")
 
+    df = finalize_names(df, vocab_path)
     df.to_csv(args.out, index=False, encoding="utf-8-sig")
     print(f"Wrote {args.out}")
+    if args.upload:
+        upload_files({pathlib.Path(args.out): f"{pdf_path.stem}.csv"}, args.upload, args.s3_endpoint, args.presign_hours)
 
 
 if __name__ == "__main__":

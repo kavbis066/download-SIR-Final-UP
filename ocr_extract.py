@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-ocr_extract.py (v3) -- shared engine for ECI SIR Final Roll card extraction.
+ocr_extract.py (v4) -- shared engine for ECI SIR Final Roll card extraction.
 
 ARCHITECTURE CHANGE FROM v1
 ----------------------------
@@ -601,7 +601,57 @@ def clean_hindi(t):
         elif ch.isspace():
             if out and out[-1] != " ": out.append(" ")
         # else: drop
-    return "".join(out).strip()
+    return normalize_devanagari("".join(out).strip())
+
+
+# --- Devanagari orthography guard -------------------------------------------
+# The recogniser sometimes hallucinates marks that cannot occur in a real word
+# (seen on correct crops: "सपना" -> "सपनाे", "रीना" -> "रीनाे"). A consonant takes
+# at most ONE vowel sign, a halant must follow a consonant, etc. Anything that
+# breaks these rules is dropped (the first, left-most mark wins).
+_VOWEL_SIGNS = set(range(0x093E, 0x094D)) | {0x093A, 0x093B, 0x094E, 0x094F, 0x0955, 0x0956, 0x0957, 0x0962, 0x0963}
+_MODIFIERS = {0x0900, 0x0901, 0x0902, 0x0903}          # candrabindu, anusvara, visarga
+_HALANT, _NUKTA = 0x094D, 0x093C
+_INDEP_VOWELS = set(range(0x0904, 0x0915))
+_ZW = {0x200C, 0x200D}
+
+
+# A Hindi word never STARTS with a nasal + halant + stop consonant (न्द, म्ब, ण्ड ...):
+# those clusters only occur inside words. Seeing one means the model dropped the
+# first letter(s) (e.g. 'नन्दू' read as 'न्दू'), so such a word is flagged for review.
+_BAD_START = re.compile(r"^[\u0919\u091e\u0923\u0928\u092e]\u094d[\u0915-\u092b\u092c\u092d]")
+
+def invalid_word_start(t):
+    return any(_BAD_START.match(w) for w in t.split())
+
+
+def normalize_devanagari(t):
+    # OCR often writes आ / ओ / औ in decomposed form (अा, अाे, अाै) -- recompose, don't drop the matra
+    t = t.replace("\u0905\u093e\u0947", "\u0913").replace("\u0905\u093e\u0948", "\u0914").replace("\u0905\u093e", "\u0906")
+    words = []
+    for w in t.split(" "):
+        out, prev = [], None                      # prev = last kept code point of this word
+        for ch in w:
+            o = ord(ch)
+            if o in _VOWEL_SIGNS:
+                if prev is None or prev in _VOWEL_SIGNS or prev == _HALANT or prev in _MODIFIERS \
+                        or prev in _INDEP_VOWELS or prev in _ZW:
+                    continue
+            elif o in _MODIFIERS:
+                if prev is None or prev == _HALANT or prev in _MODIFIERS or prev in _ZW:
+                    continue
+            elif o == _HALANT:
+                if prev is None or prev in _VOWEL_SIGNS or prev in _MODIFIERS or prev == _HALANT \
+                        or prev in _INDEP_VOWELS or prev in _ZW:
+                    continue
+            elif o == _NUKTA:
+                if prev is None or prev in _VOWEL_SIGNS or prev in _MODIFIERS or prev in (_HALANT, _NUKTA):
+                    continue
+            out.append(ch); prev = o
+        while out and ord(out[-1]) in (_HALANT, 0x200C, 0x200D):    # a name never ends in a halant / joiner
+            out.pop()
+        words.append("".join(out))
+    return " ".join(x for x in words if x)
 
 
 # ---------------------------------------------------------------------------
