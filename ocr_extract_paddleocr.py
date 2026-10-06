@@ -1,7 +1,104 @@
 #!/usr/bin/env python3
 """
-ocr_extract_paddleocr.py (v9) -- fast extraction pipeline, rebuilt on the
+ocr_extract_paddleocr.py (v11) -- fast extraction pipeline.
+
+WHAT CHANGED IN v11 -- ACs other than 86 (AC 1, AC 2, ...): missing/truncated
+serial numbers (24, 25 -> "2"), one-letter / half names, stray . , - in names,
+and "works only for AC 86's DPI"
+----------------------------------------------------------------------
+Measured on your PDFs: AC 86 pages are embedded at 949 px wide, AC 1 / AC 2 at
+1187 px (exactly 1.25x), and every pixel constant in the engine was tuned on
+949 px. v9/v10 shrank each page to 949 px, which made cards findable but
+thinned the strokes below the hard-coded thresholds. v11 stops resizing pages:
+
+ 1. SCALE-AWARE ENGINE (ocr_extract.py). The page is kept at native size; the
+    scale s = page_width / 949 is computed per page (snapped to 1.0 within 2%,
+    so AC 86 takes the identical code path) and EVERY size constant (card
+    size filter, morphology kernels, line-band heights, colon widths, crop
+    offsets, border-wipe width, destamp reach, pixel-count thresholds) is
+    scaled by it. Template matching shrinks the *region* to the 300x124
+    reference grid (templates are never touched), and the OCR crops are
+    enlarged by 3/s so the recogniser always sees text at the same physical
+    size. Cards found at ANY width (tested 700-1800 px). If the first scale
+    guess finds nothing, nearby scales are swept instead of returning an empty
+    CSV; a PDF with 0 cards now raises an error instead of writing nothing.
+ 2. SELF-CHECK on the first body page of every PDF: prints scale, card count and
+    layout_ok rate; if layout_ok < 90% it retries with alternative scales.
+ 3. SERIAL BOX FOUND BY ITS BORDERS. Root cause of "24 -> 2": the serial box is
+    NOT a fixed width (its right border sits anywhere from x=76 to x=104 in
+    AC-86 pixels), and the old fixed crop 30:95 cut digits off or kept the
+    border; ordinary cards whose border landed at 60<x<85 were even
+    misclassified as "addition" cards and cropped to 46 px. Also, border
+    wiping next to the edge deleted a trailing "1" / the stem of a "4".
+    Now the crop is cut strictly inside the located border lines, with no
+    wipe; addition cards are recognised by having two boxes.
+ 4. SERIAL SEQUENCE REPAIR (repair_serials) replaces the single-neighbour
+    rescue: any run of truncated / duplicated / unreadable serials is repaired
+    from the 1,2,3... sequence around it; suspicious ones are first re-read from
+    alternative crops and only accepted when the re-read equals the expectation.
+ 5. CARD ORDER: cards on a page were sorted with y//40 buckets, which could swap
+    cards of one row when the row straddled a multiple of 40 px; rows are now
+    clustered by real y-distance.
+ 6. NAMES: a name / relation name that cleans to < 2 characters or scores < 0.60
+    is re-cropped (different window heights, start point left of the colon,
+    destamped copy) and re-read by both Hindi models; clean_hindi is now a
+    Devanagari WHITELIST (drops . , - _ | : ; quotes, digits, dandas, Latin,
+    anywhere in the string, not just at the ends).
+ 7. text_lines() tries progressively looser passes before giving up, and the
+    last-resort positions are proportional to the card height, not absolute.
+
+AC 86 regression: every non-serial OCR input crop, template label and list type
+is bit-identical to v10 on all cards of the AC 86 sample (2 cards that v10 had
+flagged layout_unusual now get a real layout). Serial crops change only in the
+way described in (3). Name TEXT can differ from v10 only through the whitelist
+cleaning (item 6), which is the point.
+
+--- previous notes (v10 and older) ---
+ocr_extract_paddleocr.py (v10) -- fast extraction pipeline, rebuilt on the
 architecture from your colleague's parse_roll.py.
+
+WHAT CHANGED IN v10 -- half-letter/garbage names and misread serial
+numbers on ACs other than 86 (confirmed: AC 1, AC 2), even after the
+v9 empty-CSV fix
+----------------------------------------------------------------------
+The v9 fix (rescaling a page to the calibrated 949px width before card
+detection) made AC 1/AC 2 produce cards again, but their review flags
+told a second story: ~40% of rows were "layout_unusual" on both, and
+one card's serial read "23" and the next also read "2" instead of "24"
+(card_on_page 23 and 24 both landing on CSV serial_no 2). Checked AC 2
+page 3, card 23's actual serial crop directly -- "23" is clearly legible
+in the crop, so this wasn't a bad card either.
+
+Root cause: page_images_calibrated() (added in v9) was rescaling with
+cv2.INTER_AREA, a box-filter downsample. Confirmed on AC 1 page 3's
+first card: INTER_AREA thinned the "00" house-number digits just enough
+to drop that line's ink band below text_lines()'s >=4px-tall minimum,
+silently deleting a whole line from the card -- which pushes layout_ok
+to False and falls back to hardcoded y-positions that don't match this
+card's real layout, chopping other fields (names, serial) mid-glyph.
+That's exactly the half-letter-name symptom. Switching to cv2.INTER_CUBIC
+keeps that band intact (confirmed directly: all 4 lines detected,
+layout_ok=True) without changing AC 86 at all -- AC 86 never gets
+resized in the first place (already within tolerance of 949px), so the
+interpolation choice was never visible there, only on ACs that actually
+need rescaling.
+
+Measured effect (same AC 1 / AC 2 PDFs, text_lines()/process_pdf() run
+directly): layout_ok went from ~60% to 100% on both, and review_reason's
+"layout_unusual" rate dropped from ~40% to 0%. Re-run your test batches
+for AC 1/2 (and spot-check a few other non-86 ACs) to confirm this holds
+up on real OCR output, not just the pixel-level check done here (no
+network access to the OCR model hosters from this sandbox).
+
+ALSO IN v10 -- batch mode (--folder) now writes ONE combined CSV only
+----------------------------------------------------------------------
+Previously every PDF got its own CSV in the output folder (N PDFs -> N
+CSV files + _combined.csv), which is a lot of small files you never use
+individually across tens of thousands of PDFs. Workers now return their
+DataFrame directly instead of writing a per-PDF CSV; the main process
+appends each one straight into _combined.csv as it finishes. Only
+_combined.csv is written now -- nothing else changes about --folder's
+other behavior (progress logging, --limit, --recursive, --workers).
 
 WHAT ELSE CHANGED IN v9 -- some ACs (confirmed: AC 1) produce 0 cards /
 an empty output CSV, with no error
@@ -153,8 +250,8 @@ USAGE -- a whole folder of PDFs, in parallel
     python ocr_extract_paddleocr.py --folder downloads/86 --out ac86_out --workers 2 --limit 30
 
   Processes PDFs directly inside downloads/86 (add --recursive for
-  subfolders). Writes one CSV per PDF into ac86_out/ plus a combined
-  ac86_out/_combined.csv. --limit caps how many PDFs are processed, for
+  subfolders). Writes ONE combined CSV, ac86_out/_combined.csv (v10+; no per-PDF CSVs).
+  --limit caps how many PDFs are processed, for
   testing on a subset before committing to the whole folder.
 
 --workers N runs N PDFs in parallel, each in its own process with its
@@ -169,6 +266,7 @@ each PDF, same rule as before, carried over from parse_roll.py's own
 `if pno < 2 or pno == npg - 1: continue`.
 """
 import argparse
+import collections
 import concurrent.futures
 import csv
 import os
@@ -183,7 +281,7 @@ import pandas as pd
 
 import ocr_extract as base
 
-VERSION = "v9"
+VERSION = "v11"
 
 TPL_MIN, TPL_MARGIN = base.TPL_MIN, base.TPL_MARGIN
 REVIEW_BELOW = 0.90  # confirmed against your colleague's CSV in earlier versions
@@ -203,8 +301,7 @@ NAME_CORRECTIONS = {
     "मुत्ञा": "मुन्ना",
 }
 
-# Extra safety net on top of ocr_extract.clean_hindi (which already
-# strips a trailing run of Latin/junk characters): catches a DELETED-
+# Extra safety net on top of ocr_extract.clean_hindi: catches a DELETED-
 # stamp fragment that landed in the MIDDLE of a name/relation_name
 # instead of at the end.
 WATERMARK_FRAGMENT_RE = re.compile(r"\b[A-Z]{0,2}ETED\b|\bDELET\w*\b|हटाय\w*", re.IGNORECASE)
@@ -218,84 +315,183 @@ FIELDNAMES = [
     "raw_ocr_body", "stamp_px",
 ]
 
+SHORT_NAME_BELOW = 2       # a cleaned name shorter than this is treated as a mis-crop
+RETRY_SCORE_BELOW = 0.60   # ... and so is a name/relation_name read below this score
+_OIL = str.maketrans("OIL|", "0111")
+
 
 def apply_name_corrections(value: str) -> str:
     return NAME_CORRECTIONS.get(value, value)
 
 
 def clean_name_field(raw: str) -> str:
-    t = base.clean_hindi(raw)
-    t = WATERMARK_FRAGMENT_RE.sub("", t).strip()
+    """Whitelist clean: Devanagari only (see base.clean_hindi). The watermark
+    fragment regex still runs first because it matches Latin text, which the
+    whitelist would otherwise strip down to a leftover Devanagari fragment."""
+    t = base.clean(raw)
+    t = WATERMARK_FRAGMENT_RE.sub("", t)
+    t = base.clean_hindi(t)
     return apply_name_corrections(t)
+
+
+def serial_digits(txt):
+    dg = re.sub(r"\D", "", txt.upper().translate(_OIL))
+    return int(dg) if dg else None
+
+
+# ---------------------------------------------------------------------------
+# Serial-number sequence repair
+# ---------------------------------------------------------------------------
+
+def repair_serials(reads, groups, win=6, near=4, min_votes=3):
+    """Serials in a roll run 1, 2, 3 ... in card order, so a misread (a digit
+    cut off: 24 -> '2'; a duplicate: 23 -> '2', 24 -> '2'; an unreadable
+    crop) can be repaired from the cards around it.
+
+    For every card, offset = read - position-in-its-list. Cards that are
+    read correctly all share the same offset. A card is overwritten only when
+      * its own offset differs from the local majority offset M (taken over a
+        +-`win` window, needing at least `min_votes` agreeing cards), AND
+      * the majority also holds on BOTH sides of it (>=2 cards each side, fewer
+        only at the very start/end of a list).
+    That handles runs of several consecutive bad reads, while a real change
+    in numbering (a section that restarts or skips) is left alone, because
+    there the cards on the two sides disagree with each other.
+    `groups` keeps lists apart (main vs addition).
+    Returns (fixed, flags) -- flags[i] == "serial_corrected" where overwritten."""
+    n = len(reads)
+    fixed, flags = list(reads), [None] * n
+    by = {}
+    for i, g in enumerate(groups):
+        by.setdefault(g, []).append(i)
+    for idxs in by.values():
+        m = len(idxs)
+        offs = [(reads[i] - k) if reads[i] is not None else None for k, i in enumerate(idxs)]
+        for k, i in enumerate(idxs):
+            around = [offs[j] for j in range(max(0, k - win), min(m, k + win + 1)) if j != k and offs[j] is not None]
+            if not around:
+                continue
+            M, cnt = collections.Counter(around).most_common(1)[0]
+            if cnt < min_votes or offs[k] == M:
+                continue
+            left = sum(1 for j in range(max(0, k - near), k) if offs[j] == M)
+            right = sum(1 for j in range(k + 1, min(m, k + near + 1)) if offs[j] == M)
+            if left >= min(2, k) and right >= min(2, m - 1 - k) and left + right >= 3 and M + k >= 1:
+                fixed[i], flags[i] = M + k, "serial_corrected"
+    return fixed, flags
 
 
 # ---------------------------------------------------------------------------
 # Per-PDF processing -- collects every field crop for the whole PDF, OCRs
-# each language in 2 big batched calls (via ocr_extract.run_rec), then
-# cleans + assembles rows. Mirrors parse_roll.process_pdf structurally;
-# the cleaning/schema layer on top is ours.
+# each language in big batched calls (via ocr_extract.run_rec), then
+# cleans + assembles rows.
 # ---------------------------------------------------------------------------
+
+def _cut_page(g, boxes, s):
+    """Cut every card of a page (native resolution) and run the pixel-level
+    analysis. Returns a list of (card_image, scale_used, crops, info)."""
+    out = []
+    for (x, y, w, h) in boxes:
+        img, se = base.card_at_scale(g[y:y + h, x:x + w], s)
+        stamped = base.stamp_px(img, se) > 60
+        f, info = base.cut_card(img, base.destamp(img, s=se) if stamped else None, se)
+        info["stamped"] = stamped
+        out.append((img, se, f, info))
+    return out
+
+
+def _layout_rate(cut):
+    return sum(1 for c in cut if c[3]["layout_ok"]) / len(cut) if cut else 0.0
+
+
+def extract_cards(pdf_path, log=print):
+    """Pixel stage: detect + cut all cards of all body pages, at the PDF's own
+    native resolution (no page resizing -- everything downstream is scale-aware).
+    Includes the automatic self-check on the first body page."""
+    cards, hint_ratio, checked, pages_seen = [], None, False, 0
+    t0 = time.time()
+    for pno, g, npg in base.page_images(str(pdf_path)):
+        if pno < 2 or pno == npg - 1:
+            continue
+        pages_seen += 1
+        ps = base.page_scale(g)
+        boxes, s = base.detect_cards(g, ps * hint_ratio if hint_ratio else None)
+        cut = _cut_page(g, boxes, s)
+        if not checked and cut:
+            checked = True
+            rate = _layout_rate(cut)
+            log(f"    self-check: page {g.shape[1]}x{g.shape[0]}px, scale s={s:.3f}, "
+                f"{len(boxes)} cards, layout_ok {rate:.0%}")
+            if rate < 0.90:
+                best = (rate, len(cut), s, boxes, cut)
+                for f_ in (0.97, 1.03, 0.94, 1.06, 0.90, 1.10):
+                    b2 = base.find_cards(g, s * f_)
+                    if not b2:
+                        continue
+                    c2 = _cut_page(g, b2, s * f_)
+                    cand = (_layout_rate(c2), len(c2), s * f_, b2, c2)
+                    if cand[:2] > best[:2]:
+                        best = cand
+                    if cand[0] >= 0.98:
+                        break
+                rate, _, s, boxes, cut = best
+                log(f"    self-check retry: using s={s:.3f}, layout_ok {rate:.0%}"
+                    + ("" if rate >= 0.90 else "  [WARN: layout still unreliable -- check this PDF]"))
+            hint_ratio = s / ps
+        log(f"    cutting cards: page {pno + 1}/{npg} ({len(cut)} cards)")
+        if not cut:
+            log(f"    [warn] page {pno + 1}: no cards found")
+        for ci, (img, se, f, info) in enumerate(cut):
+            cards.append(dict(pdf_page=pno + 1, card_on_page=ci + 1, f=f, info=info, img=img, s=se, hi={}, en={}))
+    if not cards:
+        raise RuntimeError(
+            f"{pathlib.Path(pdf_path).name}: 0 cards found on {pages_seen} body page(s) -- the page image "
+            f"geometry is not recognised (not silently writing an empty CSV). Send this PDF for inspection.")
+    return cards, time.time() - t0
+
 
 def process_pdf(pdf_path: pathlib.Path, hi_models, en, log=print, dump_review=False, review_dir=None):
     """hi_models: list of (model, name) tuples -- one or more loaded Hindi
-    TextRecognition models (see base.load_rec_all). When more than one is
-    given, every Hindi field crop is OCR'd through ALL of them and the
-    highest-scoring reading wins (see get() below), the same way a
-    stamped/destamp "~" alt crop is already picked by score today.
+    TextRecognition models (see base.load_rec_all). Every Hindi field crop is
+    OCR'd through ALL of them and the highest-scoring reading wins (see get()
+    below); a disagreement between models is flagged for review.
 
-    Why: visually confirmed against real cards (page 3 of AC 86 part 10 --
-    see the names_crosscheck review) that a SINGLE Hindi model can
-    confidently misread a correctly-cropped, legible conjunct -- e.g. the
-    crop plainly shows "रवींद्र" but the model returns "र्वीद्र", or shows
-    "रूप चन्द्र" but returns "रूप चनद्र" (dropped halant). The crop is not
-    the problem in these cases -- cutting a taller/different window
-    wouldn't fix it. A second model's independent reading, picked by score,
-    catches many of these without touching the cropping/template code at
-    all. Costs roughly 2x the Hindi OCR time (not the English/numeric
-    fields, which aren't affected by this and stay on one model); falls
-    back to single-model behavior automatically if only one Hindi model is
-    available in this environment.
+    v11 additions on top of that:
+      * resolution-independent cutting (extract_cards / base.* take a scale)
+      * serial boxes located by their borders; serial sequence repair; a
+        truncated/odd serial is re-read from alternative crops
+      * names / relation names that came out too short or low-scoring are
+        re-cropped (colon mis-detection, window height) and re-read
+      * whitelist cleaning of names (no stray . , - etc.)
     """
     meta = base.parse_filename(pdf_path)
-    cards = []
     t0 = time.time()
-    for pno, g, npg in base.page_images_calibrated(str(pdf_path)):
-        if pno < 2 or pno == npg - 1:
-            continue
-        log(f"    cutting cards: page {pno + 1}/{npg}")
-        for ci, (x, y, w, h) in enumerate(base.find_cards(g)):
-            img = g[y:y + h, x:x + w]
-            stamped = int(((img[100:122, 80:225] > 60) & (img[100:122, 80:225] < 235)).sum()) > 60
-            f, info = base.cut_card(img, base.destamp(img) if stamped else None)
-            info["stamped"] = stamped
-            cards.append(dict(pdf_page=pno + 1, card_on_page=ci + 1, f=f, info=info, hi={}, en={}))
+    cards, _ = extract_cards(pdf_path, log)
 
     jobs = {"hi": [], "en": []}
     for k, cd in enumerate(cards):
-        F = cd["f"]
+        F, s = cd["f"], cd["s"]
         mask_of = lambda fld: F.get("mask:" + fld.rstrip("~"))
         for fld in ("name", "relation_name", "house_no", "name~", "relation_name~", "house_no~"):
             if fld in F:
-                im = base.prep(F[fld], mask_of(fld))
+                im = base.prep(F[fld], mask_of(fld), s)
                 if im is not None:
                     jobs["hi"].append((k, fld, im))
         for fld in ("serial", "epic", "age", "house_no", "section", "age~", "house_no~"):
             if fld in F:
-                im = base.prep(F[fld], mask_of(fld))
+                im = base.prep(F[fld], mask_of(fld), s)
                 if im is not None:
                     jobs["en"].append((k, fld, im))
 
     log(f"    {len(cards)} cards found, running OCR...")
-    # English/numeric fields: one model, same as before.
+    # English/numeric fields: one model.
     imgs = [j[2] for j in jobs["en"]]
     if imgs:
         for (k, fld, _), res in zip(jobs["en"], base.run_rec(en, imgs, "English")):
             cards[k]["en"][fld] = res
 
-    # Hindi fields: run through every loaded Hindi model. Index 0's result
-    # is stored under the plain field name (e.g. "name") for backward
-    # compatibility; model i>=1's result is stored under "name#i". get()
-    # below picks whichever scored highest across all of them.
+    # Hindi fields: every loaded model. Model 0's result is stored under the
+    # plain field name ("name"); model i>=1 under "name#i".
     imgs = [j[2] for j in jobs["hi"]]
     if imgs:
         for i, (model, mname) in enumerate(hi_models):
@@ -304,34 +500,113 @@ def process_pdf(pdf_path: pathlib.Path, hi_models, en, log=print, dump_review=Fa
                 key = fld if i == 0 else f"{fld}#{i}"
                 cards[k]["hi"][key] = res
 
-    rows, prev = [], None
-    for cd in cards:
+    # ------------------------------------------------------------------
+    # Candidate picking (shared by the retry stage and the row builder)
+    # ------------------------------------------------------------------
+    _re_cache = {}
+
+    def key_re(k):
+        pat = _re_cache.get(k)
+        if pat is None:
+            # k, k~ (destamped crop), k@j (re-crop variant j), each optionally #i (Hindi model i)
+            pat = _re_cache[k] = re.compile(r"^" + re.escape(k) + r"(~|@\d+)?(#\d+)?$")
+        return pat
+
+    def get(d, k):
+        pat = key_re(k)
+        best = ("", 0.0)
+        for key, val in d.items():
+            if pat.match(key) and val[1] > best[1]:
+                best = val
+        return best
+
+    def get_name(d, k):
+        """Like get(), but if the winner cleans down to < SHORT_NAME_BELOW
+        characters (the half-letter symptom) a longer reading wins instead."""
+        pat = key_re(k)
+        best, best_ok = ("", 0.0), ("", 0.0)
+        for key, val in d.items():
+            if not pat.match(key):
+                continue
+            if val[1] > best[1]:
+                best = val
+            if val[1] > best_ok[1] and len(clean_name_field(val[0]).replace(" ", "")) >= SHORT_NAME_BELOW:
+                best_ok = val
+        if len(clean_name_field(best[0]).replace(" ", "")) < SHORT_NAME_BELOW and best_ok[1] > 0:
+            return best_ok
+        return best
+
+    # ------------------------------------------------------------------
+    # Retry 1: serial numbers that break the 1,2,3... sequence are re-read
+    # from alternative crops; a re-read is only accepted if it equals what
+    # the neighbours say the serial must be.
+    # ------------------------------------------------------------------
+    reads = [serial_digits(get(cd["en"], "serial")[0]) for cd in cards]
+    groups = [cd["info"]["list_type"] for cd in cards]
+    expected, _ = repair_serials(reads, groups)
+    redo = [k for k in range(len(cards)) if expected[k] is not None and reads[k] != expected[k]]
+    n_reread = 0
+    if redo:
+        sj = []
+        for k in redo:
+            cd = cards[k]
+            for crop in base.serial_alt_crops(cd["img"], cd["s"], cd["info"]["geom"].get("lay")):
+                im = base.prep(crop, None, cd["s"])
+                if im is not None:
+                    sj.append((k, im))
+        if sj:
+            res = base.run_rec(en, [j[1] for j in sj], f"Serial re-read ({len(redo)} cards)")
+            done = set()
+            for (k, _), (txt, sc_) in zip(sj, res):
+                if k not in done and serial_digits(txt) == expected[k] and sc_ >= 0.5:
+                    cards[k]["en"]["serial"] = (txt, sc_)
+                    cards[k]["serial_reread"] = True
+                    done.add(k)
+            n_reread = len(done)
+        reads = [serial_digits(get(cd["en"], "serial")[0]) for cd in cards]
+    fixed_serial, serial_flag = repair_serials(reads, groups)
+
+    # ------------------------------------------------------------------
+    # Retry 2: names / relation names that look mis-cropped (too short or low
+    # score) are re-cut with different window heights / start points and
+    # re-read by every Hindi model; get_name() then picks the best.
+    # ------------------------------------------------------------------
+    rj = []
+    for k, cd in enumerate(cards):
+        H = cd["hi"]
+        for fld in ("name", "relation_name"):
+            pat = key_re(fld)
+            if not any(pat.match(x) for x in H):
+                continue                     # nothing was inked on this line -> nothing to retry
+            txt, sc_ = get_name(H, fld)
+            if len(clean_name_field(txt).replace(" ", "")) < SHORT_NAME_BELOW or sc_ < RETRY_SCORE_BELOW:
+                srcs = [cd["img"]] + ([base.destamp(cd["img"], s=cd["s"])] if cd["info"]["stamped"] else [])
+                j = 0
+                for src in srcs:
+                    for crop in base.line_variants(cd["img"], cd["info"]["geom"], fld, src):
+                        im = base.prep(crop, None, cd["s"])
+                        if im is not None:
+                            rj.append((k, f"{fld}@{j}", im)); j += 1
+    n_retry = len({(j[0]) for j in rj})
+    if rj:
+        for i, (model, mname) in enumerate(hi_models):
+            for (k, fld, _), res in zip(rj, base.run_rec(model, [j[2] for j in rj],
+                                                           f"Hindi re-crop ({n_retry} cards)" if i == 0 else f"Hindi(#{i}) re-crop")):
+                cards[k]["hi"][fld if i == 0 else f"{fld}#{i}"] = res
+
+    # ------------------------------------------------------------------
+    # Row assembly
+    # ------------------------------------------------------------------
+    rows, prev, prev_type = [], None, None
+    for idx, cd in enumerate(cards):
         H, E, info = cd["hi"], cd["en"], cd["info"]
         why, sc = [], []
-        # Picks the highest-scoring reading for field `k` among every
-        # variant present in `d`: the plain crop (k), the destamp-alt crop
-        # (k~), and -- for Hindi fields now that >1 model may have run --
-        # each extra model's reading of either crop (k#1, k~#1, k#2, ...).
-        # Falls back to the old two-candidate behavior automatically when
-        # only one Hindi model loaded (no "#N" keys exist at all then).
-        _field_re_cache = {}
-        def get(d, k):
-            pat = _field_re_cache.get(k)
-            if pat is None:
-                pat = _field_re_cache[k] = re.compile(r"^" + re.escape(k) + r"(~)?(#\d+)?$")
-            best = ("", 0.0)
-            for key, val in d.items():
-                if pat.match(key) and val[1] > best[1]:
-                    best = val
-            return best
 
         def model_disagreement(d, k):
             """True if two different Hindi models produced different
             non-empty cleaned readings for this field, both with some real
-            confidence -- a useful review signal even when each model's own
-            score looked fine on its own (a confidently-wrong single-model
-            read, like रवींद्र -> र्वीद्र, doesn't trigger low_ocr_confidence,
-            but a second model disagreeing with it does flag something)."""
+            confidence (a confidently-wrong single-model read doesn't trigger
+            low_ocr_confidence, but a second model disagreeing does)."""
             texts = set()
             for key, (txt, score) in d.items():
                 if key == k or key.startswith(k + "#"):
@@ -341,32 +616,30 @@ def process_pdf(pdf_path: pathlib.Path, hi_models, en, log=print, dump_review=Fa
             return len(texts) > 1
 
         st, ss = get(E, "serial")
-        dg = re.sub(r"\D", "", st.upper().translate(str.maketrans("OIL", "011")))
-        serial = int(dg) if dg else None
+        serial = fixed_serial[idx]
         sc.append(ss)
         if serial is None:
             why.append("serial_unreadable")
-        elif prev is not None and serial != prev + 1:
-            why.append("serial_out_of_sequence")
-        prev = serial if serial is not None else (prev + 1 if prev is not None else None)
+        else:
+            if serial_flag[idx]:
+                why.append(serial_flag[idx])
+            elif cd.get("serial_reread"):
+                why.append("serial_reread")
+            if prev is not None and prev_type == info["list_type"] and serial != prev + 1:
+                why.append("serial_out_of_sequence")
+        prev, prev_type = serial, info["list_type"]
 
         code = ""
         if info["marker_ink"] > 8:
-            lab, s, m = info["marker"]
+            lab, s_, m = info["marker"]
             if lab:
                 # Use the best-matched letter even when its score/margin is
-                # below the confidence cutoff — a low-confidence E/S/R/M/Q is
-                # still far more informative than throwing it away and
-                # writing "?" instead (which also silently discarded the
-                # actual reason a card was deleted, exactly the field this
-                # whole project cares most about getting right). Flag it for
-                # review instead of discarding it.
+                # below the confidence cutoff -- flag it instead of discarding it.
                 code = lab
-                if not (s >= TPL_MIN - 0.15 and m >= TPL_MARGIN):
+                if not (s_ >= TPL_MIN - 0.15 and m >= TPL_MARGIN):
                     why.append("status_letter_unclear")
             else:
-                # No template cleared even the loosest match at all (not a
-                # confidence issue — nothing scored) — genuinely unknown.
+                # No template cleared even the loosest match at all -- genuinely unknown.
                 code = "?"
                 why.append("status_letter_unclear")
         stamped = info["stamp_px"] > 60
@@ -377,21 +650,25 @@ def process_pdf(pdf_path: pathlib.Path, hi_models, en, log=print, dump_review=Fa
         if not re.match(r"^[A-Z]{3}\d{7}$", epic):
             why.append("epic_format")
 
-        name_raw, ns = get(H, "name")
+        name_raw, ns = get_name(H, "name")
         name = clean_name_field(name_raw)
         sc.append(ns)
         if not name:
             why.append("name_missing")
+        elif len(name.replace(" ", "")) < SHORT_NAME_BELOW:
+            why.append("name_too_short")
         elif model_disagreement(H, "name"):
             why.append("name_model_disagreement")
-        rname_raw, rs = get(H, "relation_name")
+        rname_raw, rs = get_name(H, "relation_name")
         rname = clean_name_field(rname_raw)
         sc.append(rs)
-        if rname and model_disagreement(H, "relation_name"):
+        if rname and len(rname.replace(" ", "")) < SHORT_NAME_BELOW:
+            why.append("relation_name_too_short")
+        elif rname and model_disagreement(H, "relation_name"):
             why.append("relation_name_model_disagreement")
 
-        lab, s, m = info["relation"]
-        if s >= TPL_MIN and m >= TPL_MARGIN:
+        lab, s_, m = info["relation"]
+        if s_ >= TPL_MIN and m >= TPL_MARGIN:
             rel = base.REL[lab]
         else:
             rel = base.REL.get(lab, "")
@@ -410,11 +687,7 @@ def process_pdf(pdf_path: pathlib.Path, hi_models, en, log=print, dump_review=Fa
             why.append("age")
 
         glab, gs, gm = info["gender"]
-        # Same fix as status code above: keep the best-matched gender even
-        # at low confidence instead of blanking it out — this was exactly
-        # the काजल bug (clearly female on the card, template match found
-        # "महिला" correctly, but score fell just under the cutoff so the
-        # field was wiped to empty instead of just being flagged).
+        # Keep the best-matched gender even at low confidence, just flag it.
         gender = glab or ""
         if not (gs >= TPL_MIN - 0.1 and gm >= TPL_MARGIN):
             why.append("gender_unclear (possibly तृतीय लिंग)")
@@ -430,7 +703,7 @@ def process_pdf(pdf_path: pathlib.Path, hi_models, en, log=print, dump_review=Fa
             why.append("low_ocr_confidence")
 
         raw_ocr_body = " | ".join(
-            f"{k}={v[0]!r}({v[1]:.2f})" for d in (H, E) for k, v in d.items()
+            f"{k}={v[0]!r}({v[1]:.2f})" for d in (H, E) for k, v in d.items() if "@" not in k
         )
 
         rows.append({
@@ -445,27 +718,11 @@ def process_pdf(pdf_path: pathlib.Path, hi_models, en, log=print, dump_review=Fa
             "raw_ocr_body": raw_ocr_body, "stamp_px": info["stamp_px"],
         })
 
-    log(f"    done in {time.time() - t0:.0f}s, {len(rows)} cards")
+    n_fix = sum(1 for f_ in serial_flag if f_)
+    log(f"    done in {time.time() - t0:.0f}s, {len(rows)} cards "
+        f"(serials repaired: {n_fix}, re-read: {n_reread}; names re-cropped: {n_retry})")
 
     df = pd.DataFrame(rows, columns=FIELDNAMES)
-    if df.empty:
-        return df
-    # a serial that breaks the sequence while both neighbours agree is a misread: correct it
-    s_ = df["serial_no"].tolist()
-    for i in range(1, len(s_) - 1):
-        a, b, c = s_[i - 1], s_[i], s_[i + 1]
-        if a is not None and c is not None and c == a + 2 and b != a + 1:
-            df.at[i, "serial_no"] = a + 1
-            s_[i] = a + 1
-            r = df.at[i, "review_reason"].replace("serial_out_of_sequence", "serial_corrected")
-            r = r.replace("serial_unreadable", "serial_corrected")
-            df.at[i, "review_reason"] = r
-    for i in range(len(s_)):
-        if i and s_[i] is not None and s_[i - 1] is not None and s_[i] == s_[i - 1] + 1:
-            df.at[i, "review_reason"] = "|".join(
-                x for x in df.at[i, "review_reason"].split("|") if x != "serial_out_of_sequence"
-            )
-    df["needs_review"] = np.where(df["review_reason"] != "", "Y", "N")
     df["serial_no"] = df["serial_no"].astype("Int64")
     return df
 
@@ -500,9 +757,14 @@ def _worker_init(device, cpu_threads):
     _WORKER["hname"] = "+".join(m for _, m in hi_models)
 
 
-def _worker_process_pdf(pdf_path_str, out_csv_str):
+def _worker_process_pdf(pdf_path_str):
+    """Returns the extracted DataFrame itself (no per-PDF CSV file) --
+    run_folder() appends it straight into the one combined CSV as each
+    worker finishes, instead of every worker writing its own CSV that then
+    has to be read back and concatenated. With ~500 files/AC and up to
+    178,725 files statewide, a CSV-per-PDF was real, unnecessary disk
+    churn for files nobody needs individually."""
     pdf_path = pathlib.Path(pdf_path_str)
-    out_csv = pathlib.Path(out_csv_str)
     tag = f"[{pdf_path.name}]"
 
     def log(msg):
@@ -510,11 +772,10 @@ def _worker_process_pdf(pdf_path_str, out_csv_str):
 
     t0 = time.time()
     df = process_pdf(pdf_path, _WORKER["hi"], _WORKER["en"], log=log)
-    df.to_csv(out_csv, index=False, encoding="utf-8-sig")
     elapsed = time.time() - t0
     print(f"{tag} done: {len(df)} cards in {elapsed:.1f}s "
-          f"({elapsed/max(len(df),1):.2f}s/card) -> {out_csv}", flush=True)
-    return str(out_csv), len(df)
+          f"({elapsed/max(len(df),1):.2f}s/card)", flush=True)
+    return pdf_path.name, df
 
 
 def run_folder(folder: pathlib.Path, out_dir: pathlib.Path, workers: int,
@@ -527,32 +788,37 @@ def run_folder(folder: pathlib.Path, out_dir: pathlib.Path, workers: int,
     if limit:
         pdfs = pdfs[:limit]
     out_dir.mkdir(parents=True, exist_ok=True)
+    combined_path = out_dir / "_combined.csv"
     limit_note = f" (limited from {total_found} found)" if limit else ""
     print(f"Found {total_found} PDFs, processing {len(pdfs)}{limit_note}. "
           f"Running with {workers} worker process(es), {cpu_threads} CPU threads each "
           f"(~{workers * cpu_threads} threads total -- watch Activity Monitor)...")
+    print(f"Writing one combined CSV only (no per-PDF CSVs): {combined_path}")
 
-    results = []
+    header_written = False
+    total_rows = processed = 0
     with concurrent.futures.ProcessPoolExecutor(
             max_workers=workers, initializer=_worker_init, initargs=(device, cpu_threads)) as pool:
-        futures = {}
-        for pdf in pdfs:
-            out_csv = out_dir / (pdf.stem + ".csv")
-            fut = pool.submit(_worker_process_pdf, str(pdf), str(out_csv))
-            futures[fut] = pdf
+        futures = {pool.submit(_worker_process_pdf, str(pdf)): pdf for pdf in pdfs}
         for fut in concurrent.futures.as_completed(futures):
             pdf = futures[fut]
             try:
-                out_csv, n = fut.result()
-                results.append(out_csv)
+                name, df = fut.result()
+                df.to_csv(combined_path, mode="a" if header_written else "w",
+                           header=not header_written, index=False, encoding="utf-8-sig")
+                header_written = True
+                total_rows += len(df)
+                processed += 1
+                print(f"  [{processed}/{len(pdfs)}] {name}: {len(df)} cards "
+                      f"(combined total: {total_rows})", flush=True)
             except Exception as exc:
                 print(f"  ! {pdf.name} failed: {exc}", file=sys.stderr)
 
-    combined_path = out_dir / "_combined.csv"
-    frames = [pd.read_csv(p) for p in results if pathlib.Path(p).exists()]
-    combined = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=FIELDNAMES)
-    combined.to_csv(combined_path, index=False, encoding="utf-8-sig")
-    print(f"\nDone: {len(results)}/{len(pdfs)} PDFs processed, {len(combined)} total cards.")
+    if not header_written:
+        # nothing succeeded -- still write an (empty, header-only) combined
+        # CSV so downstream tooling that expects the file to exist doesn't break
+        pd.DataFrame(columns=FIELDNAMES).to_csv(combined_path, index=False, encoding="utf-8-sig")
+    print(f"\nDone: {processed}/{len(pdfs)} PDFs processed, {total_rows} total cards.")
     print(f"Combined CSV: {combined_path}")
 
 
@@ -576,7 +842,7 @@ def main():
                           "use this to test on a subset before running the whole folder.")
     ap.add_argument("--out", required=True,
                      help="Single-file mode: output CSV path. --folder mode: output DIRECTORY "
-                          "(one CSV per PDF + _combined.csv)")
+                          "(one combined CSV: _combined.csv)")
     args = ap.parse_args()
 
     if not args.pdf and not args.folder:
