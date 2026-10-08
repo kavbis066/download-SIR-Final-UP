@@ -165,6 +165,18 @@ python ocr_extract_paddleocr.py --folder downloads/86 --out test_batch --workers
 # 3. Whole AC folder, once (2) looks good
 python ocr_extract_paddleocr.py --folder downloads/86 --out ac86_out --workers 2 --cpu-threads 4
 
+# OCR 100 folders
+ls downloads | sort -V | head -100 > first100.txt
+python ocr_extract_paddleocr.py --root downloads --only-file first100.txt --out outputs --workers 3 --cpu-threads 2 --gzip
+
 # 4. Scale --workers up only after (3) has run cleanly and you've
 #    confirmed CPU/memory headroom in Activity Monitor
+
+# Compress files
+python compress_pdfs.py downloads --out downloads_small --skip-file first100.txt --workers 4
+
+# Rest of 303 later
+ls downloads | sort -V | tail -n +101 > rest.txt
+python ocr_extract_paddleocr.py --root downloads_small --only-file rest.txt --out outputs --workers 3 --cpu-threads 2 --gzip
 ```
+
