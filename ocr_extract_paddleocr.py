@@ -329,7 +329,7 @@ import pandas as pd
 
 import ocr_extract as base
 
-VERSION = "v13"
+VERSION = "v14"
 
 TPL_MIN, TPL_MARGIN = base.TPL_MIN, base.TPL_MARGIN
 REVIEW_BELOW = 0.90  # confirmed against your colleague's CSV in earlier versions
@@ -374,14 +374,232 @@ def apply_name_corrections(value: str) -> str:
     return NAME_CORRECTIONS.get(value, value)
 
 
-def clean_name_field(raw: str) -> str:
+def clean_name_field(raw: str, rules: bool = True) -> str:
     """Whitelist clean: Devanagari only (see base.clean_hindi). The watermark
     fragment regex still runs first because it matches Latin text, which the
-    whitelist would otherwise strip down to a leftover Devanagari fragment."""
+    whitelist would otherwise strip down to a leftover Devanagari fragment.
+    rules=True also applies the deterministic model-error rules (fix_name_rules)."""
     t = base.clean(raw)
     t = WATERMARK_FRAGMENT_RE.sub("", t)
+    t = t.replace("\u0909\u094d", "\u0909\u0930\u094d")      # 'उ्मिला' (र् lost) -> उर्मिला; a halant cannot follow a vowel
     t = base.clean_hindi(t)
-    return apply_name_corrections(t)
+    t = apply_name_corrections(t)
+    return fix_name_rules(t)[0] if rules else t
+
+
+# ---------------------------------------------------------------------------
+# Deterministic fixes for PaddleOCR's systematic Devanagari mistakes (v14)
+# ---------------------------------------------------------------------------
+# Each of these was verified against the printed cards of AC 86 parts 1-8 (6096 cards):
+# the crop is perfect and the model returns the SAME wrong text every time, so re-reading
+# cannot help -- the text itself has to be repaired. Every rule only fires on a pattern
+# that is not a valid Hindi spelling, so it cannot damage a correct name.
+_CONS = "\u0915-\u0939\u0958-\u095F"
+_HAL = "\u094d"
+_MATRA = "\u093e-\u094c\u0901-\u0903\u093c"
+_SINGH_END = re.compile("(?:\u0938\u0938\u0902\u0939|\u0938\u093f\u0902\u0939\u0902|\u0938\u093f\u0947\u0939|\u0938\u093f\u0939|\u0938\u0902\u0939|\u0938\u093f\u0902)$")
+_ENDRA_BARE = re.compile(f"(?<=[{_CONS}{_MATRA}])(?<!{_HAL})([{_CONS}])(?=\u0928{_HAL}\u0926{_HAL}\u0930)")
+
+
+def _fix_token(t):
+    """-> (fixed_token, [rule names]). Order matters."""
+    hits = []
+
+    def sub(rule, pat, rep, tok, flags=0):
+        new = re.sub(pat, rep, tok, flags=flags)
+        if new != tok:
+            hits.append(rule)
+        return new
+
+    # 1. word cannot start with a doubled consonant: CTC merged the two glyphs (प्पू -> पप्पू)
+    m = re.match(f"^([{_CONS}]){_HAL}\\1", t)
+    if m and len(t) >= 2:
+        t = m.group(1) + t
+        hits.append("initial_geminate")
+    # 2. initial न्द (न्दू -> नन्दू)
+    t = sub("initial_nd", f"^(?=\u0928{_HAL}\u0926(?!{_HAL}))", "\u0928", t)
+    # 3. धमेन्द्र -> धर्मेन्द्र (र् lost)
+    t = sub("dharm", "^\u0927\u092e\u0947(?=\u0928{h}[\u0930\u0926])".replace("{h}", _HAL), "\u0927\u0930\u094d\u092e\u0947", t)
+    # 4. न्र -> न्द्र (the द lost); never when a vowel sign follows (मुन्री is something else)
+    t = sub("endra_d", f"\u0928{_HAL}\u0930(?![{_MATRA}\u0926])", f"\u0928{_HAL}\u0926{_HAL}\u0930", t)
+    t = sub("endra_ee", f"(?<=\u0947)\u0928{_HAL}\u0930\u0940$", f"\u0928{_HAL}\u0926{_HAL}\u0930", t)
+    # 4b. न्न read as न्र when a vowel sign follows (मुन्नी -> मुन्री, चुन्नीलाल, अन्नू, किन्ना); the -endra case
+    #     (...ेन्री) was handled above, so it never gets here
+    t = sub("nn", f"(?<!\u0947)\u0928{_HAL}\u0930(?=[\u093e\u093f\u0940\u0942\u094b])", f"\u0928{_HAL}\u0928", t)
+    # 4c. the ं / न् before द्र is lost: हरेद्र, गजेनद्र (printed हरेन्द्र / गजेन्द्र); वी + न्द्र lost रे
+    t = sub("endra_n", "(?<=\u0947)\u0928\u0926\u094d\u0930", f"\u0928{_HAL}\u0926{_HAL}\u0930", t)
+    t = sub("endra_n", "(?<=\u0947)\u0926\u094d\u0930(?!\u093f)", f"\u0928{_HAL}\u0926{_HAL}\u0930", t)
+    t = sub("endra_vi", f"^\u0935\u0940(?=\u0928{_HAL}\u0926{_HAL}\u0930)", "\u0935\u0940\u0930\u0947", t)
+    # 4d. न्न misread as ज्न (मुज्नी -> मुन्नी); लक्मी -> लक्ष्मी; पुष्पा -> पुष्षा / पुष्या ("लक्म" and "पुष्षा" are not spellings)
+    # 4c'. त्र / न्त्र where न्द्र / न्न was printed (विरन्त्र -> विरेन्द्र, मुत्रा -> मुन्ना). "रन्त्र" after a bare
+    #      र/ह/ज/ग/ल/क/ध/ब/भ/श/स/प/व is never a spelling (मन्त्र, यन्त्र, तन्त्र are not in this list)
+    t = sub("ntra", "(?<=[\u0930\u0939\u091c\u0917\u0932\u0915\u0927\u092c\u092d\u0936\u0938\u092a\u0935])\u0928" + _HAL + "\u0924" + _HAL + "\u0930(?=$)", "\u0928" + _HAL + "\u0926" + _HAL + "\u0930", t) if len(t) >= 5 else t
+    t = sub("nn", "^([\u092e\u091a\u091f\u091b])\u0941\u0924" + _HAL + "\u0930(?=[\u093e\u0940\u0942])", "\\1\u0941\u0928" + _HAL + "\u0928", t)
+    t = sub("nn", "(?<=\u0941)\u091c" + _HAL + "\u0928(?=[\u093e\u0940\u0942])", "\u0928" + _HAL + "\u0928", t)
+    t = sub("laxmi", "^\u0932\u0915" + _HAL + "\u092e", "\u0932\u0915" + _HAL + "\u0937" + _HAL + "\u092e", t)
+    t = sub("pushpa", "^\u092a\u0941\u0937" + _HAL + "[\u0937\u092f]\u093e$", "\u092a\u0941\u0937" + _HAL + "\u092a\u093e", t)
+    # 5. ...रन्द्र -> ...रेन्द्र (े lost); not after च (चन्द्र is right) and never inside a conjunct
+    if len(t) >= 5:
+        new = _ENDRA_BARE.sub(lambda m_: m_.group(1) if m_.group(1) == "\u091a" else m_.group(1) + "\u0947", t)
+        if new != t:
+            t = new
+            hits.append("endra_e")
+    # 6. -endra Singh/Kumar are always separate words
+    t = sub("endra_split", f"(\u0928{_HAL}\u0926{_HAL}\u0930)(?=\u0938\u093f|\u0938\u0902|\u0915\u0941\u092e|\u0915\u092e)", "\\1 ", t)
+    return t, hits
+
+
+def _fix_tail(tok):
+    hits = []
+    new = _SINGH_END.sub("\u0938\u093f\u0902\u0939", tok)
+    if new != tok:
+        hits.append("singh")
+        tok = new
+    new = re.sub("(?:^\u0915\u0915\u092e\u093e\u0930|(?<![\u0941\u0915])(?:\u0915\u094d\u0930\u092e\u093e\u0930|\u0915\u092e\u093e\u0930))$", "\u0915\u0941\u092e\u093e\u0930", tok)
+    if new != tok:
+        hits.append("kumar")
+        tok = new
+    return tok, hits
+
+
+# CTC merged the two identical first syllables: ममता -> मता, बबीता -> बीता. As a first word before देवी/रानी/कुमारी
+# these are never names.
+DOUBLED_FIRST = {"\u092e\u0924\u093e": "\u092e\u092e\u0924\u093e", "\u092c\u0940\u0924\u093e": "\u092c\u092c\u0940\u0924\u093e"}
+
+
+def fix_name_rules(text, want_log=False):
+    """-> (fixed_text, [(before, after, rule), ...]). Applied per word."""
+    if not text:
+        return text, []
+    out, log = [], []
+    words = text.split(" ")
+    for tok in words:
+        t, h1 = _fix_token(tok)
+        for _ in range(2):                      # rules can enable each other (धमेद्रे -> धमेन्द्रे -> धर्मेन्द्रे)
+            t2, h = _fix_token(t)
+            if t2 == t:
+                break
+            t, h1 = t2, h1 + h
+        parts = []
+        for piece in t.split(" "):          # rule 6 may have split the token
+            p2, h2 = _fix_tail(piece)
+            parts.append(p2)
+            h1 += h2
+        t = " ".join(parts)
+        if t != tok:
+            log.append((tok, t, "+".join(dict.fromkeys(h1))))
+        out.append(t)
+    # ममता lost its first म (CTC collapse of the two identical syllables): 'मता देवी' is never a name
+    FEM = ("\u0926\u0947\u0935\u0940", "\u0930\u093e\u0928\u0940", "\u0915\u0941\u092e\u093e\u0930\u0940")      # देवी रानी कुमारी
+    if len(out) >= 2 and out[1] in FEM and out[0] in DOUBLED_FIRST:
+        log.append((out[0], DOUBLED_FIRST[out[0]], "doubled_first"))
+        out[0] = DOUBLED_FIRST[out[0]]
+    return " ".join(out), log
+
+
+def suspicious_name(text):
+    """True if the (rule-free) cleaned text contains a pattern fix_name_rules would repair --
+    used to prefer another model's reading when there is one."""
+    return bool(text) and fix_name_rules(text)[0] != text
+
+
+# ---------------------------------------------------------------------------
+# house_no: pick the best of ALL candidate readings and make them valid (v14)
+# ---------------------------------------------------------------------------
+_OM = "\u0950"                       # the symbol ॐ -- the Hindi model's usual misread of a digit
+_HOUSE_JUNK = re.compile(r"[^0-9A-Za-z\u0900-\u097F /\-" + _OM + "]")
+_HOUSE_DIGITS = re.compile(r"^\d{1,5}(?:\s?[/\-]\s?\d{1,4})*$")
+_HOUSE_DIGIT_LETTER = re.compile(r"^\d{1,5}\s?([\u0900-\u097F]{1,3}|[A-Za-z])$")
+_DEV_LETTERS = re.compile(r"[\u0904-\u0939\u0958-\u095F]")
+
+
+def house_norm(txt):
+    """One raw reading -> (clean_text, has_om). Devanagari digits become ASCII, junk goes,
+    o/O next to a digit becomes 0, Hindi words (village names) stay Hindi."""
+    t = base.clean((txt or "").translate(base.DEV))
+    t = _HOUSE_JUNK.sub(" ", t)
+    t = re.sub(r"(?<=\d)[oO](?=\d|$|\s)|(?<=^)[oO](?=\d)|(?<=\s)[oO](?=\d)", "0", t)
+    t = re.sub(r"^[oO]$", "0", t)
+    t = re.sub(r"(?<![0-9])[A-Za-z]+(?![0-9])", lambda m: m.group(0) if re.fullmatch(r"[A-D]", m.group(0)) else " ", t)
+    t = re.sub(r"(?<=\d)([A-Za-z])", lambda m: m.group(1).upper(), t)
+    t = re.sub(r"\s+", " ", t).strip(" -/\u094d")
+    return t, _OM in t
+
+
+def _house_class(t):
+    """-> (weight, kind). weight 0 = unusable."""
+    if not t:
+        return 0.0, "empty"
+    if _HOUSE_DIGITS.match(t):
+        return 1.0, "digits"
+    if _HOUSE_DIGIT_LETTER.match(t):
+        return (0.6 if re.search(r"[A-Za-z]$", t) else 0.95), "digit+letter"
+    if len(_DEV_LETTERS.findall(t)) >= 3 and not re.search(r"[A-Za-z]", t):
+        return 0.9, "place"
+    return 0.0, "junk"
+
+
+def _om_repair(t):
+    """ॐ is how the model renders a mangled digit: alone it is the 0, beside another digit it is
+    the Devanagari ७ (both verified on the cards: 'ॐ' = 0, 'ॐ७' = ७७). Always flagged."""
+    digits = re.sub(r"[^0-9]", "", t)
+    return t.replace(_OM, "7" if digits else "0")
+
+
+_BENIGN = re.compile(r"[\s\"'`.,:;|_]")
+
+
+def resolve_house(items):
+    """items: [(raw_text, score, source), ...], source 'hi' (Hindi models) or 'en' (English model),
+    one entry per model/variant. -> (value, score, [flags]).
+
+    What the AC 86 audit showed (4 cards checked by eye: the English model was right and the
+    old pick wrong -- Hindi read 81 as 8, 182 as 12, 02 as 2, 38 as 8):
+      * plain ASCII digits: the English reading is the reliable one;
+      * Devanagari digits (१५३) and Devanagari letters (13अ, 10ब) exist only in the Hindi
+        reading -- English turns them into junk ('$43') or a wrong digit ('133'), so an English
+        reading that is junk-contaminated is down-weighted, and one that merely extends or equals
+        the digits of a Hindi 'number+letter' reading is dropped;
+      * ॐ (and similar symbols) never survive: they are repaired or outvoted."""
+    parsed = []
+    for raw, sc, src in items:
+        if not raw:
+            continue
+        t, om = house_norm(raw)
+        removed = _BENIGN.sub("", raw.translate(base.DEV))
+        junk = len(re.sub(r"[0-9A-Za-z\u0900-\u097F/\-]", "", removed))
+        parsed.append((t, om, sc, src, junk, bool(re.search("[\u0966-\u096F]", raw))))
+    # a Hindi reading that is a clean number written in Devanagari digits: the English model
+    # cannot read those, and what it returns looks plausible ('383' for ' १४३') -- ignore it.
+    hi_dev = any(src == "hi" and dv and not om and sc >= 0.6 and _house_class(t)[1] == "digits"
+                 for t, om, sc, src, junk, dv in parsed)
+    parsed = [x for x in parsed if not (hi_dev and x[3] == "en")]
+    hi_dl = [t for t, om, sc, src, j, dv in parsed if src == "hi" and not om and sc >= 0.5
+             and _HOUSE_DIGIT_LETTER.match(t) and re.match(r"^\d+", t) and not re.search(r"[A-Za-z]$", t)]
+    cands = []
+    for t, om, sc, src, junk, dv in parsed:
+        note = ""
+        if src == "en" and any(re.fullmatch(r"\d+", t) and (t == re.match(r"\d+", h).group(0)
+                                                             or (t.startswith(re.match(r"\d+", h).group(0)) and len(t) <= len(re.match(r"\d+", h).group(0)) + 2))
+                               for h in hi_dl):
+            continue                                   # English read the Devanagari letter as a digit / dropped it
+        if om:
+            t, note = _om_repair(t), "om_repaired"
+            t = re.sub(r"\s+", " ", t).strip()
+        w, kind = _house_class(t)
+        if note:
+            w *= 0.8
+        if junk:
+            w *= 0.6
+        if w > 0:
+            cands.append((w * sc, t, note))
+    if not cands:
+        best = max(((sc, t) for t, om, sc, src, j, dv in parsed if t), default=(0.0, ""))
+        return best[1], best[0] * 0.5, ["house_no_unclear"] if best[1] else []
+    agree = collections.Counter(c[1] for c in cands)
+    cands = [(c[0] + (0.1 if agree[c[1]] > 1 else 0.0), c[1], c[2]) for c in cands]
+    sc, t, note = max(cands, key=lambda c: c[0])
+    return t, min(sc, 1.0), (["house_no_symbol_fixed"] if note else [])
 
 
 def serial_digits(txt):
@@ -609,6 +827,12 @@ def process_pdf(pdf_path: pathlib.Path, hi_models, en, log=print, dump_review=Fa
             chosen = p
         else:
             chosen = _best(items)
+        if suspicious_name(clean_name_field(chosen[0], rules=False)):
+            alts = [v for _, v in items if v[1] >= 0.5 and _nlen(v[0]) >= SHORT_NAME_BELOW
+                    and not suspicious_name(clean_name_field(v[0], rules=False))
+                    and not base.invalid_word_start(clean_name_field(v[0], rules=False))]
+            if alts:
+                chosen = max(alts, key=lambda v: v[1])
         ct = clean_name_field(chosen[0])
         if ct and " " not in ct:
             for _, val in items:
@@ -633,7 +857,8 @@ def process_pdf(pdf_path: pathlib.Path, hi_models, en, log=print, dump_review=Fa
                 txt, sc_ = get_name(cards[k]["hi"], f)
                 ct = clean_name_field(txt)
                 weak[key] = (second_opinion == "all" or sc_ < SECOND_OPINION_BELOW
-                             or len(ct.replace(" ", "")) < SHORT_NAME_BELOW or base.invalid_word_start(ct))
+                             or len(ct.replace(" ", "")) < SHORT_NAME_BELOW or base.invalid_word_start(ct)
+                             or suspicious_name(clean_name_field(txt, rules=False)))
             return weak[key]
 
         sel = [(k, fld, im) for (k, fld, im) in jobs["hi"]
@@ -763,7 +988,7 @@ def process_pdf(pdf_path: pathlib.Path, hi_models, en, log=print, dump_review=Fa
             why.append("epic_format")
 
         name_raw, ns = get_name(H, "name")
-        name = clean_name_field(name_raw)
+        name, nlog = fix_name_rules(clean_name_field(name_raw, rules=False))
         sc.append(ns)
         if not name:
             why.append("name_missing")
@@ -774,7 +999,7 @@ def process_pdf(pdf_path: pathlib.Path, hi_models, en, log=print, dump_review=Fa
         if base.invalid_word_start(name):
             why.append("name_invalid_start")
         rname_raw, rs = get_name(H, "relation_name")
-        rname = clean_name_field(rname_raw)
+        rname, rlog = fix_name_rules(clean_name_field(rname_raw, rules=False))
         sc.append(rs)
         if rname and len(rname.replace(" ", "")) < SHORT_NAME_BELOW:
             why.append("relation_name_too_short")
@@ -790,9 +1015,9 @@ def process_pdf(pdf_path: pathlib.Path, hi_models, en, log=print, dump_review=Fa
             rel = base.REL.get(lab, "")
             why.append("relation_type_uncertain")
 
-        (hh, hs), (he, hes) = get(H, "house_no"), get(E, "house_no")
-        house, hsc = (he, hes) if hes > hs + 0.05 else (hh, hs)
-        house = base.clean(house.translate(base.DEV))
+        hpat = key_re("house_no")
+        house, hsc, hnotes = resolve_house([(v[0], v[1], src) for src, d in (("hi", H), ("en", E)) for kk, v in d.items() if hpat.match(kk)])
+        why.extend(hnotes)
         sc.append(hsc)
 
         at, ascr = get(E, "age")
@@ -831,7 +1056,10 @@ def process_pdf(pdf_path: pathlib.Path, hi_models, en, log=print, dump_review=Fa
             "list_type": info["list_type"], "addition_section_no": sec,
             "file_name": pdf_path.name, "pdf_page": cd["pdf_page"], "card_on_page": cd["card_on_page"],
             "confidence": conf, "needs_review": "Y" if why else "N", "review_reason": "|".join(why),
-            "raw_ocr_body": raw_ocr_body, "stamp_px": info["stamp_px"], "autocorrect_log": "",
+            "raw_ocr_body": raw_ocr_body, "stamp_px": info["stamp_px"],
+            "autocorrect_log": "; ".join([f"name: {a}>{b} [{r}]" for a, b, r in nlog]
+                                         + [f"relation_name: {a}>{b} [{r}]" for a, b, r in rlog]
+                                         + ([f"house_no: {house}" + " [ॐ repaired]"] if hnotes and "house_no_symbol_fixed" in hnotes else [])),
         })
 
     n_fix = sum(1 for f_ in serial_flag if f_)
@@ -979,7 +1207,7 @@ def apply_vocab(df, counts):
     for col in ("name", "relation_name"):
         for i, v in zip(df.index, df[col].fillna("").tolist()):
             toks = str(v).split()
-            fixed = [vc.fix(x) for x in toks]
+            fixed = [fix_name_rules(vc.fix(x))[0] for x in toks]   # the vocabulary can re-create a pattern the rules repair (वीन्द्र -> वीरन्द्र)
             if fixed != toks:
                 n_fixed += 1
                 df.at[i, col] = " ".join(fixed)
@@ -1012,8 +1240,64 @@ def save_vocab(path, counts):
     os.replace(tmp, path)
 
 
+HOUSE_CANON_MIN = 4       # a village / locality spelling seen at least this often is the reference spelling
+HOUSE_CANON_RATIO = 1.5     # ... and at least this many times more often than the variant being normalised
+HOUSE_CANON_SIM = 0.74    # spelling similarity (spaces ignored)
+
+
+def canon_house(df, log=print):
+    """House-number fields that are village names (गिजौली, धिग्रोली, डेरा बंजारा ...) are misspelled in
+    a dozen ways by the model (गिजीली, गिजोली, वीलेज गिज़ली). Map each rare spelling onto the
+    dominant, near-identical spelling in the same run. Numbers are never touched."""
+    import difflib
+    if df.empty or "house_no" not in df:
+        return df
+    vals = df["house_no"].fillna("").astype(str)
+    is_place = vals.str.fullmatch(r"[\u0900-\u097F ]{4,}")
+    cnt = collections.Counter(vals[is_place])
+    # same letters, different spacing (डेराबंजारा / डेरा बंजारा): the model drops spaces, so the spaced form wins
+    groups = collections.defaultdict(list)
+    for v, n in cnt.items():
+        groups[v.replace(" ", "")].append((" " in v, n, v))
+    merge = {}
+    for g in groups.values():
+        tgt = max(g)[2]
+        for _, _, v in g:
+            merge[v] = tgt
+    if any(v != t for v, t in merge.items()):
+        vals = vals.map(lambda v: merge.get(v, v))
+        cnt = collections.Counter(vals[is_place])
+    canon = {v: n for v, n in cnt.items() if n >= HOUSE_CANON_MIN}
+    if not canon:
+        return df
+    df = df.copy()
+    nfix = 0
+    for i in vals.index[is_place]:
+        v = vals[i]
+        if v in canon:
+            if df.at[i, "house_no"] != v:
+                df.at[i, "house_no"] = v
+                nfix += 1
+            continue
+        key = v.replace(" ", "")
+        best, best_r = None, 0.0
+        for c, n in canon.items():
+            r = difflib.SequenceMatcher(None, key, c.replace(" ", "")).ratio()
+            if r > best_r and n >= HOUSE_CANON_RATIO * cnt[v]:
+                best, best_r = c, r
+        if best and best_r >= HOUSE_CANON_SIM:
+            df.at[i, "house_no"] = best
+            prev = str(df.at[i, "autocorrect_log"]) if str(df.at[i, "autocorrect_log"]) not in ("", "nan") else ""
+            df.at[i, "autocorrect_log"] = (prev + "; " if prev else "") + f"house_no: {v}>{best}"
+            nfix += 1
+    if nfix:
+        log(f"  house_no: {nfix} village-name spellings normalised ({len(canon)} reference names)")
+    return df
+
+
 def finalize_names(df, vocab_path, log=print):
     """Vocabulary pass over a finished DataFrame; updates the persistent vocab file."""
+    df = canon_house(df, log)
     if vocab_path is None or df.empty:
         return df
     loaded = load_vocab(vocab_path)
@@ -1065,7 +1349,8 @@ def upload_files(files, dest, endpoint=None, presign_hours=0):
 
 def run_folder(folder: pathlib.Path, out_dir: pathlib.Path, workers: int,
                recursive: bool, device, cpu_threads: int, limit=None,
-               vocab_path=None, upload=None, s3_endpoint=None, presign_hours=0, second_opinion="auto"):
+               vocab_path=None, upload=None, s3_endpoint=None, presign_hours=0, second_opinion="auto",
+               pool=None, gzip_csv=False):
     # natural order: ...-1-WI, ...-2-WI, ...-10-WI, ...-100-WI  (plain sorted() gave 1, 10, 100, 101 ...)
     pdfs = sorted(folder.rglob("*.pdf") if recursive else folder.glob("*.pdf"),
                   key=lambda p: natural_key(p.relative_to(folder)))
@@ -1092,8 +1377,11 @@ def run_folder(folder: pathlib.Path, out_dir: pathlib.Path, workers: int,
     failed = []
     done, next_i = {}, 0
     t_start = time.time()
-    with concurrent.futures.ProcessPoolExecutor(
-            max_workers=workers, initializer=_worker_init, initargs=(device, cpu_threads, second_opinion)) as pool:
+    own_pool = pool is None          # --root mode passes ONE pool in, so the OCR models are loaded once per worker, not once per folder
+    if own_pool:
+        pool = concurrent.futures.ProcessPoolExecutor(
+            max_workers=workers, initializer=_worker_init, initargs=(device, cpu_threads, second_opinion))
+    try:
         futures = {pool.submit(_worker_process_pdf, str(pdf)): i for i, pdf in enumerate(pdfs)}
         for fut in concurrent.futures.as_completed(futures):
             i = futures[fut]
@@ -1118,6 +1406,10 @@ def run_folder(folder: pathlib.Path, out_dir: pathlib.Path, workers: int,
                 print(f"  [{processed}/{len(pdfs)}] {name}: {len(df)} cards "
                       f"(combined total: {total_rows})", flush=True)
 
+    finally:
+        if own_pool:
+            pool.shutdown()
+
     if header_written:
         if vocab_path:
             allrows = pd.read_csv(partial_path, dtype=str, keep_default_na=False, encoding="utf-8-sig")
@@ -1135,20 +1427,87 @@ def run_folder(folder: pathlib.Path, out_dir: pathlib.Path, workers: int,
     if failed:
         (out_dir / "_failed.txt").write_text("\n".join(failed), encoding="utf-8")
         print(f"FAILED PDFs ({len(failed)}) listed in {out_dir / '_failed.txt'}", file=sys.stderr)
+    if gzip_csv and combined_path.exists():
+        import gzip, shutil
+        gz_path = combined_path.with_name("_combined.csv.gz")
+        with open(combined_path, "rb") as fi, gzip.open(gz_path, "wb", compresslevel=9) as fo:
+            shutil.copyfileobj(fi, fo)
+        combined_path.unlink()                       # CSV text of this kind compresses ~8-10x
+        combined_path = gz_path
     print(f"Combined CSV: {combined_path}")
 
+    import json
+    info = {"version": VERSION, "folder": str(folder), "pdfs_found": total_found, "pdfs_processed": processed,
+            "pdfs_failed": failed, "cards": total_rows, "first_pdf": pdfs[0].name, "last_pdf": pdfs[-1].name,
+            "seconds": round(time.time() - t_start, 1), "complete": (not failed and len(pdfs) == total_found),
+            "finished_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
+    info_path = out_dir / "_run_info.json"                # also the "this folder is done" marker for --root resume
+    info_path.write_text(json.dumps(info, ensure_ascii=False, indent=2), encoding="utf-8")
     if upload:
-        import json
-        info = {"version": VERSION, "folder": str(folder), "pdfs_processed": processed, "pdfs_failed": failed,
-                "cards": total_rows, "first_pdf": pdfs[0].name, "last_pdf": pdfs[-1].name,
-                "finished_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
-        info_path = out_dir / "_run_info.json"
-        info_path.write_text(json.dumps(info, ensure_ascii=False, indent=2), encoding="utf-8")
         tag = folder.resolve().name
-        files = {combined_path: f"{tag}/_combined.csv", info_path: f"{tag}/_run_info.json"}
+        files = {combined_path: f"{tag}/{combined_path.name}", info_path: f"{tag}/_run_info.json"}
         if failed:
             files[out_dir / "_failed.txt"] = f"{tag}/_failed.txt"
         upload_files(files, upload, s3_endpoint, presign_hours)
+    return info
+
+
+def run_root(root: pathlib.Path, out_root: pathlib.Path, workers, device, cpu_threads, limit=None, vocab_path=None,
+             upload=None, s3_endpoint=None, presign_hours=0, second_opinion="auto", gzip_csv=False,
+             force=False, only=None, recursive=False):
+    """Every sub-folder of `root` that contains PDFs is one job (downloads/1, downloads/2 ... downloads/100).
+    One worker pool is shared by all of them. A folder is skipped if its _run_info.json says complete, so the
+    same command can simply be re-run after an interruption (or when new folders appear). One bad folder
+    never stops the others."""
+    import json
+    subs = sorted((d for d in root.iterdir() if d.is_dir() and (any(d.rglob("*.pdf")) if recursive else any(d.glob("*.pdf")))),
+                  key=lambda p: natural_key(p.name))
+    if only:
+        wanted = set(only)
+        subs = [d for d in subs if d.name in wanted]
+    if not subs:
+        print(f"No sub-folders with PDFs under {root}")
+        return
+    print(f"{len(subs)} folders under {root}: {subs[0].name} ... {subs[-1].name}; one shared pool of "
+          f"{workers} worker(s) x {cpu_threads} thread(s)")
+    pool = concurrent.futures.ProcessPoolExecutor(
+        max_workers=workers, initializer=_worker_init, initargs=(device, cpu_threads, second_opinion))
+    summary, t_all = [], time.time()
+    try:
+        for n, sub in enumerate(subs, 1):
+            out_dir = out_root / sub.name
+            marker = out_dir / "_run_info.json"
+            if marker.exists() and not force and not limit:
+                try:
+                    if json.loads(marker.read_text(encoding="utf-8")).get("complete"):
+                        print(f"[{n}/{len(subs)}] {sub.name}: already done -- skipped (use --force to redo)")
+                        continue
+                except Exception:
+                    pass
+            print(f"\n[{n}/{len(subs)}] ===== {sub.name} =====", flush=True)
+            try:
+                info = run_folder(sub, out_dir, workers, recursive, device, cpu_threads, limit, vocab_path,
+                                  upload, s3_endpoint, presign_hours, second_opinion, pool=pool, gzip_csv=gzip_csv)
+                summary.append({"folder": sub.name, **({k: info[k] for k in ("pdfs_found", "pdfs_processed", "cards", "seconds", "complete")} if info else {})})
+            except Exception as exc:                         # keep going with the next folder
+                print(f"  ! folder {sub.name} failed: {type(exc).__name__}: {exc}", file=sys.stderr)
+                summary.append({"folder": sub.name, "error": f"{type(exc).__name__}: {exc}"})
+            if getattr(pool, "_broken", False):               # a worker was killed (out of memory?) -> fresh pool
+                pool.shutdown(wait=False)
+                pool = concurrent.futures.ProcessPoolExecutor(
+                    max_workers=workers, initializer=_worker_init, initargs=(device, cpu_threads, second_opinion))
+            if summary:
+                out_root.mkdir(parents=True, exist_ok=True)
+                sp = out_root / "_all_folders_summary.csv"
+                prev = pd.read_csv(sp, dtype=str) if sp.exists() else pd.DataFrame()
+                cur = pd.DataFrame(summary).astype(str)
+                if not prev.empty and "folder" in prev:
+                    cur = pd.concat([prev[~prev["folder"].isin(cur["folder"])], cur], ignore_index=True)
+                cur.to_csv(sp, index=False)
+    finally:
+        pool.shutdown()
+    print(f"\nAll done: {len(summary)} folders run in {(time.time() - t_all) / 60:.1f} min. "
+          f"Summary: {out_root / '_all_folders_summary.csv'}")
 
 
 def main():
@@ -1157,6 +1516,11 @@ def main():
     ap.add_argument("pdf", nargs="?", help="Single PDF file (omit if using --folder)")
     ap.add_argument("--folder", help="Process every PDF in this folder instead of a single file")
     ap.add_argument("--recursive", action="store_true", help="With --folder, also descend into subfolders")
+    ap.add_argument("--root", help="Process EVERY sub-folder of this directory (e.g. downloads -> downloads/1 ... downloads/100); "
+                                   "outputs go to --out/<sub-folder>/. Finished folders are skipped, so re-running resumes.")
+    ap.add_argument("--only", nargs="+", help="With --root: only these sub-folder names (e.g. --only 86 2 3)")
+    ap.add_argument("--force", action="store_true", help="With --root: redo folders that are already marked complete")
+    ap.add_argument("--gzip", action="store_true", help="Store _combined.csv.gz instead of _combined.csv (about 8-10x smaller)")
     ap.add_argument("--device", default=None, help="e.g. 'cpu' -- passed straight to PaddleOCR's TextRecognition")
     ap.add_argument("--workers", type=int, default=1,
                      help="Parallel worker processes for --folder mode (default 1 = sequential, like a "
@@ -1191,13 +1555,20 @@ def main():
     args = ap.parse_args()
     vocab_path = None if args.no_vocab else args.vocab
 
-    if not args.pdf and not args.folder:
-        ap.error("provide a PDF file, or --folder for batch mode")
+    if not args.pdf and not args.folder and not args.root:
+        ap.error("provide a PDF file, --folder DIR, or --root DIR for batch mode")
+
+    if args.root:
+        run_root(pathlib.Path(args.root), pathlib.Path(args.out), args.workers, args.device, args.cpu_threads,
+                 args.limit, vocab_path, args.upload, args.s3_endpoint, args.presign_hours, args.second_opinion,
+                 args.gzip, args.force, args.only, args.recursive)
+        return
 
     if args.folder:
         run_folder(pathlib.Path(args.folder), pathlib.Path(args.out), args.workers,
                    args.recursive, args.device, args.cpu_threads, args.limit,
-                   vocab_path, args.upload, args.s3_endpoint, args.presign_hours, args.second_opinion)
+                   vocab_path, args.upload, args.s3_endpoint, args.presign_hours, args.second_opinion,
+                   gzip_csv=args.gzip)
         return
 
     _limit_threads(args.cpu_threads)

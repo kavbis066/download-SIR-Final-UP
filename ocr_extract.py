@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-ocr_extract.py (v4) -- shared engine for ECI SIR Final Roll card extraction.
+ocr_extract.py (v2) -- shared engine for ECI SIR Final Roll card extraction.
 
 ARCHITECTURE CHANGE FROM v1
 ----------------------------
@@ -182,8 +182,11 @@ def page_images(pdf):
         imgs = page.get_images(full=True)
         pix = fitz.Pixmap(doc, imgs[0][0]) if len(imgs) == 1 else page.get_pixmap(dpi=115)
         if pix.n - pix.alpha >= 4: pix = fitz.Pixmap(fitz.csRGB, pix)
-        a = np.frombuffer(pix.samples, np.uint8).reshape(pix.h, pix.w, pix.n)[:, :, :3]
-        yield i, cv2.cvtColor(a, cv2.COLOR_RGB2GRAY), len(doc)
+        a = np.frombuffer(pix.samples, np.uint8).reshape(pix.h, pix.w, pix.n)
+        if pix.n - pix.alpha == 1:          # grayscale page (e.g. a PDF shrunk with compress_pdfs.py): already gray
+            yield i, np.ascontiguousarray(a[:, :, 0]), len(doc)
+        else:
+            yield i, cv2.cvtColor(np.ascontiguousarray(a[:, :, :3]), cv2.COLOR_RGB2GRAY), len(doc)
 
 
 def page_scale(g):
