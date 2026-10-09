@@ -321,6 +321,7 @@ import csv
 import os
 import pathlib
 import re
+import shutil
 import sys
 import time
 
@@ -330,7 +331,7 @@ import pandas as pd
 
 import ocr_extract as base
 
-VERSION = "v15"
+VERSION = "v16"
 
 TPL_MIN, TPL_MARGIN = base.TPL_MIN, base.TPL_MARGIN
 REVIEW_BELOW = 0.90  # confirmed against your colleague's CSV in earlier versions
@@ -356,6 +357,7 @@ NAME_CORRECTIONS = {
 WATERMARK_FRAGMENT_RE = re.compile(r"\b[A-Z]{0,2}ETED\b|\bDELET\w*\b|हटाय\w*", re.IGNORECASE)
 
 FIELDNAMES = [
+    "ac_part",            # "<AC number>_<part number>", e.g. 86_2 = AC 86, part 2 (the PDF ...-86-SIR-...-HIN-2-WI.pdf)
     "serial_no", "name", "relation_type", "relation_name", "house_no", "age", "gender",
     "epic_no", "status_code", "status_meaning", "deleted", "deleted_stamp",
     "list_type", "addition_section_no", "file_name", "pdf_page", "card_on_page",
@@ -385,7 +387,6 @@ _OIL = str.maketrans("OIL|", "0111")
 # reading is chosen by arbitrate_name() below. It needs `tesseract` and hin.traineddata on the machine
 # (brew install tesseract tesseract-lang); without them the pipeline runs exactly as v14.
 import math
-import shutil
 import subprocess
 
 TESS = {"ok": None, "dir": None, "bin": None}
@@ -879,6 +880,7 @@ def process_pdf(pdf_path: pathlib.Path, hi_models, en, log=print, dump_review=Fa
       * whitelist cleaning of names (no stray . , - etc.)
     """
     meta = base.parse_filename(pdf_path)
+    ac_part = f"{meta['ac_number']}_{meta['part_number']}" if meta["ac_number"] and meta["part_number"] else pdf_path.stem
     t0 = time.time()
     if TESS["ok"] is None and os.environ.get("OCR_USE_TESS"):
         tess_setup(quiet=True)
@@ -1251,6 +1253,7 @@ def process_pdf(pdf_path: pathlib.Path, hi_models, en, log=print, dump_review=Fa
                 raw_ocr_body += f" | {fld}#T={tbest[0]!r}({tbest[1]:.2f})"
 
         rows.append({
+            "ac_part": ac_part,
             "serial_no": serial, "name": name, "relation_type": rel, "relation_name": rname,
             "house_no": house, "age": age, "gender": gender, "epic_no": epic,
             "status_code": code, "status_meaning": STATUS_MEANING.get(code, "?" if code else ""),
@@ -1272,8 +1275,10 @@ def process_pdf(pdf_path: pathlib.Path, hi_models, en, log=print, dump_review=Fa
 
     df = pd.DataFrame(rows, columns=FIELDNAMES + (TESS_COLS if TESS["ok"] else []))
     df["serial_no"] = df["serial_no"].astype("Int64")
+    total_cards = len(df)
     if deleted_only:
         df = df[df["deleted"] == "Y"].reset_index(drop=True)
+    df.attrs["total_cards"] = total_cards
     return df
 
 
@@ -1328,7 +1333,7 @@ def _worker_process_pdf(pdf_path_str):
     elapsed = time.time() - t0
     print(f"{tag} done: {len(df)} cards in {elapsed:.1f}s "
           f"({elapsed/max(len(df),1):.2f}s/card)", flush=True)
-    return pdf_path.name, df
+    return pdf_path.name, df, int(df.attrs.get("total_cards", len(df))), round(elapsed, 1)
 
 
 # ---------------------------------------------------------------------------
@@ -1657,7 +1662,7 @@ def upload_files(files, dest, endpoint=None, presign_hours=0):
 def run_folder(folder: pathlib.Path, out_dir: pathlib.Path, workers: int,
                recursive: bool, device, cpu_threads: int, limit=None,
                vocab_path=None, upload=None, s3_endpoint=None, presign_hours=0, second_opinion="auto",
-               pool=None, gzip_csv=False, max_rows=0, slim=False):
+               pool=None, gzip_csv=False, max_rows=0, slim=False, fresh=False):
     # natural order: ...-1-WI, ...-2-WI, ...-10-WI, ...-100-WI  (plain sorted() gave 1, 10, 100, 101 ...)
     pdfs = sorted(folder.rglob("*.pdf") if recursive else folder.glob("*.pdf"),
                   key=lambda p: natural_key(p.relative_to(folder)))
@@ -1668,88 +1673,122 @@ def run_folder(folder: pathlib.Path, out_dir: pathlib.Path, workers: int,
     if limit:
         pdfs = pdfs[:limit]
     out_dir.mkdir(parents=True, exist_ok=True)
+    import json
     combined_path = out_dir / "_combined.csv"
-    partial_path = out_dir / "_combined.partial.csv"
     for old in list(out_dir.glob("_combined*.csv")) + list(out_dir.glob("_combined*.csv.gz")) + list(out_dir.glob("_combined*.partial*")):
-        old.unlink()                       # leftovers of an earlier run of this folder (a re-run may produce a different number of files)
-    chunk_paths = []                       # with max_rows: _combined.partial_001.csv, _002 ... each closed at a PDF boundary
-    chunk_rows = 0
+        old.unlink()                       # outputs of an earlier (finished or interrupted) run: they are rebuilt below from the saved per-PDF parts
+
+    # ---- progress is saved per PDF in <out>/_parts/, so an interrupted run continues where it stopped ----------------
+    parts_dir = out_dir / "_parts"
+    signature = {"version": VERSION, "deleted_only": bool(os.environ.get("OCR_DELETED_ONLY")), "second_opinion": second_opinion,
+                 "tess": bool(os.environ.get("OCR_USE_TESS")), "slim": bool(slim)}
+    sig_path = parts_dir / "_signature.json"
+    if parts_dir.exists():
+        try:
+            same_run = json.loads(sig_path.read_text(encoding="utf-8")) == signature
+        except Exception:
+            same_run = False
+        if fresh or not same_run:
+            why_ = "--force" if fresh else "different settings or version than the saved progress"
+            print(f"Discarding saved progress in {parts_dir} ({why_}).")
+            shutil.rmtree(parts_dir, ignore_errors=True)
+    parts_dir.mkdir(exist_ok=True)
+    sig_path.write_text(json.dumps(signature), encoding="utf-8")
+
+    def part_files(pdf):
+        return parts_dir / (pdf.name + ".csv"), parts_dir / (pdf.name + ".json")
+
+    stats = {}                              # pdf name -> {"cards", "deleted", "seconds"}
+    todo = []
+    for i, pdf in enumerate(pdfs):
+        pc_, pj_ = part_files(pdf)
+        if pc_.exists() and pj_.exists():
+            try:
+                stats[pdf.name] = json.loads(pj_.read_text(encoding="utf-8"))
+                continue
+            except Exception:
+                pass
+        todo.append(pdf)
+    resumed = len(pdfs) - len(todo)
     limit_note = f" (limited from {total_found} found)" if limit else ""
     print(f"Found {total_found} PDFs, processing {len(pdfs)}{limit_note}, in natural order "
           f"({pdfs[0].name} ... {pdfs[-1].name}). "
           f"Running with {workers} worker process(es), {cpu_threads} CPU threads each "
           f"(~{workers * cpu_threads} threads total -- watch Activity Monitor)...")
+    if resumed:
+        print(f"RESUMING: {resumed} PDF(s) were finished by an earlier run and are reused; {len(todo)} left to do.")
     print(f"Writing {'CSV files of ~' + format(max_rows, ',') + ' rows (split at PDF boundaries)' if max_rows else 'one combined CSV only (no per-PDF CSVs)'}: {out_dir}")
 
-    header_written = False
-    total_rows = processed = 0
     failed = []
-    done, next_i = {}, 0
+    processed = 0
     t_start = time.time()
+    cards_now = 0
     own_pool = pool is None          # --root mode passes ONE pool in, so the OCR models are loaded once per worker, not once per folder
-    if own_pool:
+    if own_pool and todo:
         pool = concurrent.futures.ProcessPoolExecutor(
             max_workers=workers, initializer=_worker_init, initargs=(device, cpu_threads, second_opinion))
     try:
-        futures = {pool.submit(_worker_process_pdf, str(pdf)): i for i, pdf in enumerate(pdfs)}
+        futures = {pool.submit(_worker_process_pdf, str(pdf)): pdf for pdf in todo} if todo else {}
         for fut in concurrent.futures.as_completed(futures):
-            i = futures[fut]
+            pdf = futures[fut]
             try:
-                done[i] = fut.result()
+                name, df, n_cards, secs = fut.result()
             except Exception as exc:
-                done[i] = None
-                failed.append(pdfs[i].name)
-                print(f"  ! {pdfs[i].name} failed: {exc}", file=sys.stderr)
-            # rows are appended strictly in file order, even when workers finish out of order
-            while next_i in done:
-                res = done.pop(next_i)
-                next_i += 1
-                if res is None:
-                    continue
-                name, df = res
-                if slim:
-                    df = df.drop(columns=[c for c in ("raw_ocr_body", "stamp_px") if c in df.columns])
-                if max_rows:
-                    if not chunk_paths or chunk_rows >= max_rows:      # next PDF starts a new file
-                        chunk_paths.append(out_dir / f"_combined.partial_{len(chunk_paths) + 1:03d}.csv")
-                        chunk_rows = 0
-                    target, first = chunk_paths[-1], chunk_rows == 0
-                else:
-                    target, first = partial_path, not header_written
-                df.to_csv(target, mode="w" if first else "a", header=first, index=False, encoding="utf-8-sig")
-                chunk_rows += len(df)
-                header_written = True
-                total_rows += len(df)
-                processed += 1
-                el = max(time.time() - t_start, 1e-9)
-                print(f"  [{processed}/{len(pdfs)}] {name}: {len(df)} cards "
-                      f"(total {total_rows}, {total_rows / el:.1f} cards/s)", flush=True)
-
+                failed.append(pdf.name)
+                print(f"  ! {pdf.name} failed: {exc}", file=sys.stderr)
+                continue
+            if slim:
+                df = df.drop(columns=[c for c in ("raw_ocr_body", "stamp_px", "file_name") if c in df.columns])
+            pc_, pj_ = part_files(pdf)
+            tmp_ = pc_.with_name(pc_.name + ".tmp")
+            df.to_csv(tmp_, index=False, encoding="utf-8-sig")
+            os.replace(tmp_, pc_)                                        # a part is either complete or absent
+            st_ = {"cards": n_cards, "deleted": int((df["deleted"] == "Y").sum()), "rows": len(df), "seconds": secs}
+            pj_.write_text(json.dumps(st_), encoding="utf-8")            # written last: its presence marks the part as finished
+            stats[pdf.name] = st_
+            processed += 1
+            cards_now += n_cards
+            el = max(time.time() - t_start, 1e-9)
+            print(f"  [{resumed + processed}/{len(pdfs)}] {name}: {n_cards} cards, {st_['deleted']} deleted "
+                  f"(this run: {cards_now} cards, {cards_now / el:.1f} cards/s)", flush=True)
     finally:
-        if own_pool:
+        if own_pool and pool is not None:
             pool.shutdown()
 
+    # ---- assemble the CSV file(s) from the saved parts, in natural PDF order ------------------------------------------
+    done_pdfs = [pdf for pdf in pdfs if pdf.name in stats]
     out_files = []
-    if header_written:
-        parts = chunk_paths if max_rows else [partial_path]
-        for k, part in enumerate(parts, 1):
+    total_rows = sum(stats[p_.name]["rows"] for p_ in done_pdfs)
+    total_cards = sum(stats[p_.name]["cards"] for p_ in done_pdfs)
+    total_deleted = sum(stats[p_.name]["deleted"] for p_ in done_pdfs)
+    if done_pdfs:
+        chunks, cur, cur_rows = [], [], 0
+        for pdf in done_pdfs:
+            cur.append(pdf); cur_rows += stats[pdf.name]["rows"]
+            if max_rows and cur_rows >= max_rows:
+                chunks.append(cur); cur, cur_rows = [], 0
+        if cur:
+            chunks.append(cur)
+        for k, group in enumerate(chunks, 1):
             final = out_dir / (f"_combined_{k:03d}.csv" if max_rows else "_combined.csv")
-            rows_ = pd.read_csv(part, dtype=str, keep_default_na=False, encoding="utf-8-sig")
+            frames = [pd.read_csv(part_files(p_)[0], dtype=str, keep_default_na=False, encoding="utf-8-sig") for p_ in group]
+            rows_ = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=FIELDNAMES)
             finalize_names(rows_, vocab_path).to_csv(final, index=False, encoding="utf-8-sig")
-            part.unlink()
             out_files.append(final)
     else:
         # nothing succeeded -- still write an (empty, header-only) combined
         # CSV so downstream tooling that expects the file to exist doesn't break
         pd.DataFrame(columns=FIELDNAMES).to_csv(combined_path, index=False, encoding="utf-8-sig")
         out_files.append(combined_path)
-    print(f"\nDone: {processed}/{len(pdfs)} PDFs processed, {total_rows} total cards "
-          f"in {time.time() - t_start:.0f}s.")
+    print(f"\nDone: {len(done_pdfs)}/{len(pdfs)} PDFs ({resumed} reused from an earlier run, {processed} processed now), "
+          f"{total_cards} cards, {total_deleted} deleted, in {time.time() - t_start:.0f}s.")
     if failed:
         (out_dir / "_failed.txt").write_text("\n".join(failed), encoding="utf-8")
-        print(f"FAILED PDFs ({len(failed)}) listed in {out_dir / '_failed.txt'}", file=sys.stderr)
+        print(f"FAILED PDFs ({len(failed)}) listed in {out_dir / '_failed.txt'} -- run the same command again to retry just those", file=sys.stderr)
+    elif (out_dir / "_failed.txt").exists():
+        (out_dir / "_failed.txt").unlink()
     if gzip_csv:
-        import gzip, shutil
+        import gzip
         gz = []
         for f_ in out_files:
             g_ = f_.with_name(f_.name + ".gz")
@@ -1760,13 +1799,19 @@ def run_folder(folder: pathlib.Path, out_dir: pathlib.Path, workers: int,
         out_files = gz
     print(f"Output: {', '.join(f.name for f in out_files)}")
 
-    import json
-    info = {"version": VERSION, "folder": str(folder), "pdfs_found": total_found, "pdfs_processed": processed,
-            "pdfs_failed": failed, "cards": total_rows, "files": [f.name for f in out_files], "first_pdf": pdfs[0].name, "last_pdf": pdfs[-1].name,
-            "seconds": round(time.time() - t_start, 1), "complete": (not failed and len(pdfs) == total_found),
+    complete = (not failed and len(done_pdfs) == total_found)
+    info = {"version": VERSION, "folder": str(folder), "mode": "deleted_only" if signature["deleted_only"] else "all_cards",
+            "pdfs_found": total_found, "pdfs_processed": len(done_pdfs), "pdfs_resumed_from_earlier_run": resumed,
+            "pdfs_failed": failed, "cards": total_cards, "deleted_cards": total_deleted, "rows_written": total_rows,
+            "files": [f.name for f in out_files], "first_pdf": pdfs[0].name, "last_pdf": pdfs[-1].name,
+            "per_pdf": [{"pdf": p_.name, "cards": stats[p_.name]["cards"], "deleted": stats[p_.name]["deleted"],
+                         "seconds": stats[p_.name]["seconds"]} for p_ in done_pdfs],
+            "seconds": round(time.time() - t_start, 1), "complete": complete,
             "finished_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
     info_path = out_dir / "_run_info.json"                # also the "this folder is done" marker for --root resume
     info_path.write_text(json.dumps(info, ensure_ascii=False, indent=2), encoding="utf-8")
+    if complete:
+        shutil.rmtree(parts_dir, ignore_errors=True)      # the saved progress is only needed until the folder is finished
     if upload:
         tag = folder.resolve().name
         files = {f_: f"{tag}/{f_.name}" for f_ in out_files}
@@ -1813,7 +1858,7 @@ def run_root(root: pathlib.Path, out_root: pathlib.Path, workers, device, cpu_th
             try:
                 info = run_folder(sub, out_dir, workers, recursive, device, cpu_threads, limit, vocab_path,
                                   upload, s3_endpoint, presign_hours, second_opinion, pool=pool, gzip_csv=gzip_csv,
-                                  max_rows=max_rows, slim=slim)
+                                  max_rows=max_rows, slim=slim, fresh=force)
                 summary.append({"folder": sub.name, **({k: info[k] for k in ("pdfs_found", "pdfs_processed", "cards", "seconds", "complete")} if info else {})})
             except Exception as exc:                         # keep going with the next folder
                 print(f"  ! folder {sub.name} failed: {type(exc).__name__}: {exc}", file=sys.stderr)
@@ -1846,12 +1891,12 @@ def main():
                                    "outputs go to --out/<sub-folder>/. Finished folders are skipped, so re-running resumes.")
     ap.add_argument("--only", nargs="+", help="With --root: only these sub-folder names (e.g. --only 86 2 3)")
     ap.add_argument("--only-file", help="With --root: text file with one sub-folder name per line (use for a list of 100 of the 403 folders)")
-    ap.add_argument("--force", action="store_true", help="With --root: redo folders that are already marked complete")
+    ap.add_argument("--force", action="store_true", help="Redo from scratch: with --root also folders already marked complete; with --folder ignore the saved per-PDF progress")
     ap.add_argument("--max-rows", type=int, default=100000,
                      help="Start a new CSV (_combined_001.csv, _002 ...) once the current one holds this many rows; "
                           "files are cut between PDFs (parts), never inside one, so a file can exceed the limit by < 1 PDF. "
                           "0 = one file per folder. Excel's limit is 1,048,576 rows per sheet (default 100000).")
-    ap.add_argument("--slim", action="store_true", help="Leave out the audit columns raw_ocr_body and stamp_px "
+    ap.add_argument("--slim", action="store_true", help="Leave out the audit columns raw_ocr_body, stamp_px and file_name (ac_part still tells you the PDF) "
                                                        "(about 60%% smaller CSVs; you lose the data needed to debug a wrong name)")
     ap.add_argument("--gzip", action="store_true", help="Store _combined.csv.gz instead of _combined.csv (about 8-10x smaller)")
     ap.add_argument("--device", default=None, help="e.g. 'cpu' -- passed straight to PaddleOCR's TextRecognition")
@@ -1926,7 +1971,7 @@ def main():
         run_folder(pathlib.Path(args.folder), pathlib.Path(args.out), args.workers,
                    args.recursive, args.device, args.cpu_threads, args.limit,
                    vocab_path, args.upload, args.s3_endpoint, args.presign_hours, args.second_opinion,
-                   gzip_csv=args.gzip, max_rows=args.max_rows, slim=args.slim)
+                   gzip_csv=args.gzip, max_rows=args.max_rows, slim=args.slim, fresh=args.force)
         return
 
     _limit_threads(args.cpu_threads)
