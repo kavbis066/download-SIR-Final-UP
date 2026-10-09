@@ -314,6 +314,7 @@ each PDF, same rule as before, carried over from parse_roll.py's own
 `if pno < 2 or pno == npg - 1: continue`.
 """
 import argparse
+import functools
 import collections
 import concurrent.futures
 import csv
@@ -329,7 +330,7 @@ import pandas as pd
 
 import ocr_extract as base
 
-VERSION = "v14"
+VERSION = "v15"
 
 TPL_MIN, TPL_MARGIN = base.TPL_MIN, base.TPL_MARGIN
 REVIEW_BELOW = 0.90  # confirmed against your colleague's CSV in earlier versions
@@ -363,11 +364,102 @@ FIELDNAMES = [
     "raw_ocr_body", "stamp_px", "autocorrect_log",
 ]
 
+TESS_COLS = ["name_tess", "relation_name_tess"]     # internal: "text<TAB>confidence"; consumed and dropped by finalize_names()
 SHORT_NAME_BELOW = 2       # a cleaned name shorter than this is treated as a mis-crop
 RETRY_SCORE_BELOW = 0.60   # ... and so is a name/relation_name read below this score
 SECOND_OPINION_BELOW = 0.90  # v5 read scoring below this (or short / invalid start) also gets the v3 model
 V3_NEEDS_MARGIN = 0.15       # a v3 reading must beat the v5 reading by this much to be used (v3 is overconfident)
 _OIL = str.maketrans("OIL|", "0111")
+
+
+
+# ---------------------------------------------------------------------------
+# Second reader for names: Tesseract's Hindi model (v15)
+# ---------------------------------------------------------------------------
+# Audit of 1,344 AC 86 cards (2,688 name / relation_name fields): the PaddleOCR Devanagari model
+# returns a confidently wrong name on ~8% of fields -- it drops conjuncts and repeated letters
+# (रश्मी -> रशमी, लक्ष्मी -> लक्षम, ज्ञान -> जान, गुडडी -> गुडी, पप्पू -> पपू, सन्नो -> सत्रो) with scores of
+# 0.9-1.00, so no confidence threshold can catch them, and the crop itself is perfect. Tesseract's
+# Hindi LSTM reads these conjuncts correctly (but has its own, different, mistakes: व <-> द, a spurious
+# nukta / chandrabindu, short junk words). The two engines disagree on ~14% of the fields; the final
+# reading is chosen by arbitrate_name() below. It needs `tesseract` and hin.traineddata on the machine
+# (brew install tesseract tesseract-lang); without them the pipeline runs exactly as v14.
+import math
+import shutil
+import subprocess
+
+TESS = {"ok": None, "dir": None, "bin": None}
+TESS_MIN_WORD_CONF = 0.60      # a trailing 1-2 character word below this is junk (a stray dot / mark read as a letter)
+
+
+def tess_setup(tessdata=None, quiet=False):
+    """Locate tesseract + the Hindi data; sets TESS["ok"]. Safe to call repeatedly (per worker)."""
+    if TESS["ok"] is not None:
+        return TESS["ok"]
+    TESS["ok"] = False
+    exe = shutil.which("tesseract")
+    if not exe:
+        if not quiet:
+            print("[tesseract] not installed -- names are read by PaddleOCR only (brew install tesseract tesseract-lang)", file=sys.stderr)
+        return False
+    cands = [tessdata, os.environ.get("OCR_TESSDATA"), os.environ.get("TESSDATA_PREFIX"), None,
+             "/opt/homebrew/share/tessdata", "/usr/local/share/tessdata", "/usr/share/tesseract-ocr/5/tessdata",
+             "/usr/share/tesseract-ocr/4.00/tessdata", str(pathlib.Path.home() / "tessdata")]
+    for cand in cands:
+        cmd = [exe, "--list-langs"] + (["--tessdata-dir", cand] if cand else [])
+        try:
+            out = subprocess.run(cmd, capture_output=True, text=True, timeout=30).stdout.split()
+        except Exception:
+            continue
+        if "hin" in out:
+            TESS.update(ok=True, dir=cand, bin=exe)
+            if not quiet:
+                print(f"[tesseract] Hindi reader ready ({exe}, data: {cand or 'default'})", file=sys.stderr)
+            return True
+    if not quiet:
+        print("[tesseract] installed but the Hindi data (hin.traineddata) was not found -- names are read by "
+              "PaddleOCR only. Put hin.traineddata in a folder and pass --tessdata FOLDER", file=sys.stderr)
+    return False
+
+
+def tess_read(im):
+    """One name-line crop -> (text, min word confidence 0-1) or None. Single-threaded on purpose
+    (OMP_THREAD_LIMIT=1): the workers already use every core."""
+    if not TESS["ok"] or im is None:
+        return None
+    g = cv2.cvtColor(im, cv2.COLOR_BGR2GRAY) if im.ndim == 3 else im
+    g = cv2.copyMakeBorder(g, 10, 10, 10, 10, cv2.BORDER_CONSTANT, value=255)
+    ok, png = cv2.imencode(".png", g)
+    if not ok:
+        return None
+    cmd = [TESS["bin"], "stdin", "stdout", "-l", "hin", "--psm", "7"] + (["--tessdata-dir", TESS["dir"]] if TESS["dir"] else []) + ["-c", "tessedit_create_tsv=1"]
+    env = dict(os.environ, OMP_THREAD_LIMIT="1")
+    try:
+        out = subprocess.run(cmd, input=png.tobytes(), capture_output=True, timeout=60, env=env).stdout.decode("utf-8", "replace")
+    except Exception:
+        return None
+    words = []
+    for line in out.splitlines()[1:]:
+        f = line.split("\t")
+        if len(f) >= 12 and f[0] == "5" and f[11].strip():
+            try:
+                words.append((f[11].strip(), float(f[10]) / 100.0))
+            except ValueError:
+                pass
+    return tess_clean_words(words)
+
+
+def tess_clean_words(words):
+    """words [(text, conf)] -> (text, confidence). Drops stray 1-2 character words at the edges that Tesseract read
+    with low confidence (a dot above the line becomes 'हि', 'नि', ':' ...)."""
+    words = [(w, c) for w, c in words if re.sub(r"[\s:;.,_'\"|\-]", "", w)]
+    while words and len(words[-1][0]) <= 2 and words[-1][1] < TESS_MIN_WORD_CONF and len(words) > 1:
+        words.pop()
+    while words and len(words[0][0]) <= 2 and words[0][1] < TESS_MIN_WORD_CONF and len(words) > 1:
+        words.pop(0)
+    if not words:
+        return ("", 0.0)
+    return (" ".join(w for w, _ in words), min(c for _, c in words))
 
 
 def apply_name_corrections(value: str) -> str:
@@ -382,9 +474,24 @@ def clean_name_field(raw: str, rules: bool = True) -> str:
     t = base.clean(raw)
     t = WATERMARK_FRAGMENT_RE.sub("", t)
     t = t.replace("\u0909\u094d", "\u0909\u0930\u094d")      # 'उ्मिला' (र् lost) -> उर्मिला; a halant cannot follow a vowel
+    t = t.replace("\u200c", "").replace("\u200d", "")      # zero-width joiners (Tesseract emits them)
     t = base.clean_hindi(t)
+    t = strip_label_fragment(t)
     t = apply_name_corrections(t)
     return fix_name_rules(t)[0] if rules else t
+
+
+# The relation_name crop sometimes starts inside the printed label ("पिता का नाम:" / "पति का नाम:"), so its tail
+# ("नाम", "म:", "ाम") ends up in front of the name. A real name never starts with one of these words.
+LABEL_FRAGMENTS = {"\u092e", "\u092e\u0903", "\u0928\u093e\u092e", "\u093e\u092e", "\u0917\u092e", "\u092e\u0930", "\u092e\u093f",
+                   "\u092e\u0902", "\u0938\u092e\u093f\u0903", "\u0939\u092e", "\u0903"}
+
+
+def strip_label_fragment(t):
+    toks = t.split(" ")
+    while len(toks) > 1 and toks[0] in LABEL_FRAGMENTS:
+        toks.pop(0)
+    return " ".join(toks)
 
 
 # ---------------------------------------------------------------------------
@@ -401,8 +508,9 @@ _SINGH_END = re.compile("(?:\u0938\u0938\u0902\u0939|\u0938\u093f\u0902\u0939\u0
 _ENDRA_BARE = re.compile(f"(?<=[{_CONS}{_MATRA}])(?<!{_HAL})([{_CONS}])(?=\u0928{_HAL}\u0926{_HAL}\u0930)")
 
 
+@functools.lru_cache(maxsize=500000)
 def _fix_token(t):
-    """-> (fixed_token, [rule names]). Order matters."""
+    """-> (fixed_token, (rule names)). Order matters. Cached: the same words come up thousands of times."""
     hits = []
 
     def sub(rule, pat, rep, tok, flags=0):
@@ -423,6 +531,9 @@ def _fix_token(t):
     # 4. न्र -> न्द्र (the द lost); never when a vowel sign follows (मुन्री is something else)
     t = sub("endra_d", f"\u0928{_HAL}\u0930(?![{_MATRA}\u0926])", f"\u0928{_HAL}\u0926{_HAL}\u0930", t)
     t = sub("endra_ee", f"(?<=\u0947)\u0928{_HAL}\u0930\u0940$", f"\u0928{_HAL}\u0926{_HAL}\u0930", t)
+    # 4b'. महन्री -> महेन्द्री, सुरेनत्र -> सुरेन्द्र (े and द lost)
+    t = sub("endra_ri", f"(?<=[{_CONS}])(?<!{_HAL})([{_CONS}])\u0928{_HAL}\u0930\u0940$", "\\1\u0947\u0928"+_HAL+"\u0926"+_HAL+"\u0930\u0940", t) if len(t) >= 5 else t
+    t = sub("endra_n", "(?<=\u0947)\u0928\u0924\u094d\u0930", f"\u0928{_HAL}\u0926{_HAL}\u0930", t)
     # 4b. न्न read as न्र when a vowel sign follows (मुन्नी -> मुन्री, चुन्नीलाल, अन्नू, किन्ना); the -endra case
     #     (...ेन्री) was handled above, so it never gets here
     t = sub("nn", f"(?<!\u0947)\u0928{_HAL}\u0930(?=[\u093e\u093f\u0940\u0942\u094b])", f"\u0928{_HAL}\u0928", t)
@@ -446,9 +557,10 @@ def _fix_token(t):
             hits.append("endra_e")
     # 6. -endra Singh/Kumar are always separate words
     t = sub("endra_split", f"(\u0928{_HAL}\u0926{_HAL}\u0930)(?=\u0938\u093f|\u0938\u0902|\u0915\u0941\u092e|\u0915\u092e)", "\\1 ", t)
-    return t, hits
+    return t, tuple(hits)
 
 
+@functools.lru_cache(maxsize=500000)
 def _fix_tail(tok):
     hits = []
     new = _SINGH_END.sub("\u0938\u093f\u0902\u0939", tok)
@@ -459,7 +571,7 @@ def _fix_tail(tok):
     if new != tok:
         hits.append("kumar")
         tok = new
-    return tok, hits
+    return tok, tuple(hits)
 
 
 # CTC merged the two identical first syllables: ममता -> मता, बबीता -> बीता. As a first word before देवी/रानी/कुमारी
@@ -475,16 +587,17 @@ def fix_name_rules(text, want_log=False):
     words = text.split(" ")
     for tok in words:
         t, h1 = _fix_token(tok)
+        h1 = list(h1)
         for _ in range(2):                      # rules can enable each other (धमेद्रे -> धमेन्द्रे -> धर्मेन्द्रे)
             t2, h = _fix_token(t)
             if t2 == t:
                 break
-            t, h1 = t2, h1 + h
+            t, h1 = t2, h1 + list(h)
         parts = []
         for piece in t.split(" "):          # rule 6 may have split the token
             p2, h2 = _fix_tail(piece)
             parts.append(p2)
-            h1 += h2
+            h1 += list(h2)
         t = " ".join(parts)
         if t != tok:
             log.append((tok, t, "+".join(dict.fromkeys(h1))))
@@ -600,6 +713,38 @@ def resolve_house(items):
     cands = [(c[0] + (0.1 if agree[c[1]] > 1 else 0.0), c[1], c[2]) for c in cands]
     sc, t, note = max(cands, key=lambda c: c[0])
     return t, min(sc, 1.0), (["house_no_symbol_fixed"] if note else [])
+
+
+_SERIAL_LETTER = re.compile(r"^([ESRMQ])\s*0*(\d{1,6})$")
+
+
+
+def serial_letter(ser, s):
+    """Status letter printed INSIDE the serial box of an addition-list card ("R 801", "S 802"), found from the pixels:
+    a narrow glyph (4-10 px at AC-86 scale) separated from the digits by a gap of >= 3.5 px (gaps between digits are <= 3).
+    -> (found, label, score): label is the best status template ('' if none matched well). Checked on 3,192 cards of three
+    PDFs: found on exactly the 'R 752' / 'R 772' cards, on none of the other ~3,190 serial boxes."""
+    if ser is None or ser.size == 0:
+        return False, "", 0.0
+    ink = ser < 128
+    cols = ink.sum(0) > 0
+    runs, st = [], None
+    for i, v in enumerate(list(cols) + [False]):
+        if v and st is None:
+            st = i
+        elif not v and st is not None:
+            runs.append((st, i - 1)); st = None
+    # a border line left in the crop is a thin, full-height run -- not a glyph
+    runs = [q for q in runs if not ((q[1] - q[0] + 1) <= max(2, base.S(2, s)) and ink[:, q[0]:q[1] + 1].any(1).sum() > 0.8 * ser.shape[0])]
+    if len(runs) < 2:
+        return False, "", 0.0
+    a, b_ = runs[0]
+    width, gap = (b_ - a + 1) / s, (runs[1][0] - b_ - 1) / s
+    if not (4 <= width <= 10 and gap >= 3.5):
+        return False, "", 0.0
+    reg = np.pad(ser[:, max(a - base.S(6, s), 0):b_ + base.S(7, s)], 4, constant_values=255)
+    lab, sc, _ = base.match(base.to_ref(reg, s), "M")
+    return True, (lab or ""), float(sc)
 
 
 def serial_digits(txt):
@@ -735,6 +880,8 @@ def process_pdf(pdf_path: pathlib.Path, hi_models, en, log=print, dump_review=Fa
     """
     meta = base.parse_filename(pdf_path)
     t0 = time.time()
+    if TESS["ok"] is None and os.environ.get("OCR_USE_TESS"):
+        tess_setup(quiet=True)
     cards, _ = extract_cards(pdf_path, log)
 
     jobs = {"hi": [], "en": []}
@@ -753,6 +900,26 @@ def process_pdf(pdf_path: pathlib.Path, hi_models, en, log=print, dump_review=Fa
                     jobs["en"].append((k, fld, im))
 
     log(f"    {len(cards)} cards found, running OCR...")
+    deleted_only = bool(os.environ.get("OCR_DELETED_ONLY"))
+    if deleted_only:
+        # Serial number of EVERY card first (cheap; the sequence check needs the neighbours), then the full read only on
+        # cards that can be deleted: a status marker at the left, a DELETED stamp, or a letter printed inside the serial box.
+        sj = [j for j in jobs["en"] if j[1] == "serial"]
+        if sj:
+            for (k, fld, _), res in zip(sj, base.run_rec(en, [j[2] for j in sj], "English (serials)")):
+                cards[k]["en"][fld] = res
+        cand = set()
+        for k, cd in enumerate(cards):
+            inf = cd["info"]
+            if inf["marker_ink"] > 8 or inf["stamp_px"] > 60:
+                cand.add(k)
+            else:
+                st_ = cd["en"].get("serial")
+                if st_ and _SERIAL_LETTER.match(re.sub(r"[^A-Z0-9 ]", "", st_[0].upper()).strip()):
+                    cand.add(k)
+        jobs["en"] = [j for j in jobs["en"] if j[1] != "serial" and j[0] in cand]
+        jobs["hi"] = [j for j in jobs["hi"] if j[0] in cand]
+        log(f"    deleted-only: {len(cand)} of {len(cards)} cards can be deleted -> full OCR on those only")
     # English/numeric fields: one model.
     imgs = [j[2] for j in jobs["en"]]
     if imgs:
@@ -767,6 +934,18 @@ def process_pdf(pdf_path: pathlib.Path, hi_models, en, log=print, dump_review=Fa
     if imgs and hi_models:
         for (k, fld, _), res in zip(jobs["hi"], base.run_rec(hi_models[0][0], imgs, "Hindi")):
             cards[k]["hi"][fld] = res
+
+    # Tesseract's Hindi reading of every name / relation_name crop (cards[k]["tess"][field] = (text, conf)); the
+    # PaddleOCR-vs-Tesseract decision is made later, per folder, in arbitrate_names() because it uses a vocabulary
+    # built from the whole folder.
+    n_tess = 0
+    if TESS["ok"]:
+        for k, fld, im in jobs["hi"]:
+            if fld.rstrip("~") in ("name", "relation_name"):
+                res = tess_read(im)
+                if res is not None:
+                    cards[k].setdefault("tess", {})[fld] = res
+                    n_tess += 1
 
     # ------------------------------------------------------------------
     # Candidate picking (shared by the retry stage and the row builder)
@@ -827,12 +1006,6 @@ def process_pdf(pdf_path: pathlib.Path, hi_models, en, log=print, dump_review=Fa
             chosen = p
         else:
             chosen = _best(items)
-        if suspicious_name(clean_name_field(chosen[0], rules=False)):
-            alts = [v for _, v in items if v[1] >= 0.5 and _nlen(v[0]) >= SHORT_NAME_BELOW
-                    and not suspicious_name(clean_name_field(v[0], rules=False))
-                    and not base.invalid_word_start(clean_name_field(v[0], rules=False))]
-            if alts:
-                chosen = max(alts, key=lambda v: v[1])
         ct = clean_name_field(chosen[0])
         if ct and " " not in ct:
             for _, val in items:
@@ -857,8 +1030,7 @@ def process_pdf(pdf_path: pathlib.Path, hi_models, en, log=print, dump_review=Fa
                 txt, sc_ = get_name(cards[k]["hi"], f)
                 ct = clean_name_field(txt)
                 weak[key] = (second_opinion == "all" or sc_ < SECOND_OPINION_BELOW
-                             or len(ct.replace(" ", "")) < SHORT_NAME_BELOW or base.invalid_word_start(ct)
-                             or suspicious_name(clean_name_field(txt, rules=False)))
+                             or len(ct.replace(" ", "")) < SHORT_NAME_BELOW or base.invalid_word_start(ct))
             return weak[key]
 
         sel = [(k, fld, im) for (k, fld, im) in jobs["hi"]
@@ -979,7 +1151,31 @@ def process_pdf(pdf_path: pathlib.Path, hi_models, en, log=print, dump_review=Fa
                 # No template cleared even the loosest match at all -- genuinely unknown.
                 code = "?"
                 why.append("status_letter_unclear")
+        # Addition-list cards print the status letter INSIDE the serial box, left of the number ("R 801"), where the
+        # left-hand marker detector does not look. Evidence, in order: (1) the OCR reading of the serial box is a known
+        # letter + the digits of the final serial; (2) a detached glyph is found in the serial box (serial_letter()) and
+        # matches a status template; (3) the glyph exists but is unclear -> '?' (flagged), never a blank.
+        if not code and serial is not None:
+            ocr_letter = ""
+            for kk, vv in E.items():
+                if kk.startswith("serial") and vv[1] >= 0.6:
+                    mm = _SERIAL_LETTER.match(re.sub(r"[^A-Z0-9 ]", "", vv[0].upper()).strip())
+                    if mm and int(mm.group(2)) == serial:
+                        ocr_letter = mm.group(1)
+                        break
+            found, glab, gsc = serial_letter(cd["f"].get("serial"), cd["s"])
+            if ocr_letter:
+                code = ocr_letter
+            elif found:
+                if glab and gsc >= 0.5 and glab in KNOWN_STATUS_CODES:
+                    code = glab
+                else:
+                    code = "?"
+                if gsc < TPL_MIN - 0.15:
+                    why.append("status_letter_unclear")
         stamped = info["stamp_px"] > 60
+        if stamped and not code:
+            why.append("deleted_without_status_code")      # a DELETED stamp but no status letter found: look at the card
 
         e_raw, es = get(E, "epic")
         epic = base.fix_epic(e_raw)
@@ -1046,6 +1242,13 @@ def process_pdf(pdf_path: pathlib.Path, hi_models, en, log=print, dump_review=Fa
         raw_ocr_body = " | ".join(
             f"{k}={v[0]!r}({v[1]:.2f})" for d in (H, E) for k, v in d.items() if "@" not in k
         )
+        tess_cols = {}
+        for fld in ("name", "relation_name"):
+            tv = [v for kk, v in cd.get("tess", {}).items() if kk.rstrip("~") == fld and v[0]]
+            tbest = max(tv, key=lambda v: v[1]) if tv else None
+            tess_cols[fld + "_tess"] = f"{tbest[0]}\t{tbest[1]:.3f}\t{(ns if fld == 'name' else rs):.3f}" if tbest else ""
+            if tbest:
+                raw_ocr_body += f" | {fld}#T={tbest[0]!r}({tbest[1]:.2f})"
 
         rows.append({
             "serial_no": serial, "name": name, "relation_type": rel, "relation_name": rname,
@@ -1056,7 +1259,7 @@ def process_pdf(pdf_path: pathlib.Path, hi_models, en, log=print, dump_review=Fa
             "list_type": info["list_type"], "addition_section_no": sec,
             "file_name": pdf_path.name, "pdf_page": cd["pdf_page"], "card_on_page": cd["card_on_page"],
             "confidence": conf, "needs_review": "Y" if why else "N", "review_reason": "|".join(why),
-            "raw_ocr_body": raw_ocr_body, "stamp_px": info["stamp_px"],
+            "raw_ocr_body": raw_ocr_body, "stamp_px": info["stamp_px"], **(tess_cols if TESS["ok"] else {}),
             "autocorrect_log": "; ".join([f"name: {a}>{b} [{r}]" for a, b, r in nlog]
                                          + [f"relation_name: {a}>{b} [{r}]" for a, b, r in rlog]
                                          + ([f"house_no: {house}" + " [ॐ repaired]"] if hnotes and "house_no_symbol_fixed" in hnotes else [])),
@@ -1065,10 +1268,12 @@ def process_pdf(pdf_path: pathlib.Path, hi_models, en, log=print, dump_review=Fa
     n_fix = sum(1 for f_ in serial_flag if f_)
     log(f"    done in {time.time() - t0:.0f}s, {len(rows)} cards "
         f"(serials repaired: {n_fix}, re-read: {n_reread}; names re-cropped: {n_retry}; "
-        f"v3 second opinion on {n_second} cards)")
+        f"v3 second opinion on {n_second} cards; tesseract name reads: {n_tess})")
 
-    df = pd.DataFrame(rows, columns=FIELDNAMES)
+    df = pd.DataFrame(rows, columns=FIELDNAMES + (TESS_COLS if TESS["ok"] else []))
     df["serial_no"] = df["serial_no"].astype("Int64")
+    if deleted_only:
+        df = df[df["deleted"] == "Y"].reset_index(drop=True)
     return df
 
 
@@ -1094,6 +1299,8 @@ _WORKER = {}
 
 def _worker_init(device, cpu_threads, second_opinion="auto"):
     _limit_threads(cpu_threads)
+    if os.environ.get("OCR_USE_TESS"):
+        tess_setup(quiet=True)
     _WORKER["so"] = second_opinion
     hi_models = base.load_rec_all(base.HI_MODELS, device)
     if not hi_models:
@@ -1240,6 +1447,100 @@ def save_vocab(path, counts):
     os.replace(tmp, path)
 
 
+
+# ---------------------------------------------------------------------------
+# PaddleOCR vs Tesseract: which reading of a name is right? (v15)
+# ---------------------------------------------------------------------------
+# Hand-labelled on 376 fields of AC 86 where the two engines disagreed (against the printed cards):
+#   Tesseract right 222, PaddleOCR right 106, neither 29 (the rest were label noise / equivalent spellings).
+# Neither engine's own confidence separates them (PaddleOCR is "1.00" on its wrong reads), so the decision
+# uses (a) how well each candidate's words are known -- the words that BOTH engines read identically are
+# near-certainly right and form the lexicon -- (b) Tesseract's confidence, (c) PaddleOCR's confidence,
+# (d) a candidate that merely lost a word ("भूरे खॉँ" -> "भूरे") is not preferred. With these weights 277/316
+# of the disagreements were decided correctly (87%; always-Tesseract: 70%, always-PaddleOCR: 30%).
+ARB_W, ARB_K, ARB_C, ARB_KP, ARB_CP, ARB_KD, ARB_CAP = 2.0, 6.0, 0.5, 3.0, 0.95, 0.3, 5
+ARB_UNSURE = 1.5            # |score| below this: the pick is a coin-flip-ish -> flagged <field>_engine_pick in review_reason
+LEX_MIN_TOKENS = 3000       # below this the lexicon is too small to mean much (its weight is scaled down)
+
+
+def _tess_norm(t):
+    """Tesseract adds a spurious chandrabindu to word-final ो (शहरवानो -> शहरवानों); real words ending in ों are rare in names."""
+    return re.sub("ों(?=$|\\s)", "ो", t)
+
+
+def _lex_score(text, lex):
+    ts = text.split()
+    return sum(min(math.log2(1 + lex.get(t, 0)), ARB_CAP) for t in ts) / len(ts) if ts else 0.0
+
+
+def arbitrate_pair(p, pc, t, tc, lex, lex_weight=1.0):
+    """-> (use_tesseract: bool, score). p / t are cleaned texts; score > 0 favours Tesseract."""
+    if not t:
+        return False, -99.0
+    if not p:
+        return True, 99.0
+    lp, lt = p.split(), t.split()
+    if len(lt) < len(lp) and lp[:len(lt)] == lt:
+        return False, -99.0                                  # Tesseract lost the last word(s)
+    dl = max(-3, min(3, len(t.replace(" ", "")) - len(p.replace(" ", ""))))
+    v = (ARB_W * lex_weight * (_lex_score(t, lex) - _lex_score(p, lex)) + ARB_K * (tc - ARB_C)
+         - ARB_KP * (pc - ARB_CP) + ARB_KD * dl)
+    return v > 0, v
+
+
+def arbitrate_names(df, lex_base=None, log=print):
+    """Replace name / relation_name by the Tesseract reading where arbitrate_pair() says so.
+    Returns (df, agreed_counter): the tokens both engines read identically (to be added to the persistent lexicon)."""
+    cols = [c for c in ("name", "relation_name") if c + "_tess" in df.columns]
+    agreed = collections.Counter()
+    if not cols or df.empty:
+        return df, agreed
+    df = df.copy()
+    parsed = {}
+    for col in cols:
+        lst = []
+        for p_, tv in zip(df[col].fillna("").astype(str), df[col + "_tess"].fillna("").astype(str)):
+            f = tv.split("\t")
+            if len(f) >= 3 and f[0].strip():
+                try:
+                    t = _tess_norm(clean_name_field(f[0])); tc = float(f[1]); pc = float(f[2])
+                except ValueError:
+                    t, tc, pc = "", 0.0, 0.0
+            else:
+                t, tc, pc = "", 0.0, 0.0
+            lst.append((t, tc, pc))
+            if t and p_.replace(" ", "") == t.replace(" ", ""):
+                agreed.update(p_.split())
+        parsed[col] = lst
+    lex = collections.Counter(lex_base or {})
+    lex.update(agreed)
+    lw = min(1.0, sum(lex.values()) / LEX_MIN_TOKENS)
+    n_t = n_unsure = n_diff = 0
+    for col in cols:
+        for idx, p_, (t, tc, pc) in zip(df.index, df[col].fillna("").astype(str), parsed[col]):
+            if not t:
+                continue
+            if p_.replace(" ", "") == t.replace(" ", ""):
+                if t.count(" ") > p_.count(" "):
+                    df.at[idx, col] = t                       # same letters, Tesseract kept the word spaces
+                continue
+            n_diff += 1
+            use_t, v = arbitrate_pair(p_, pc, t, tc, lex, lw)
+            if use_t:
+                df.at[idx, col] = t
+                n_t += 1
+                prev = str(df.at[idx, "autocorrect_log"]) if str(df.at[idx, "autocorrect_log"]) not in ("", "nan") else ""
+                df.at[idx, "autocorrect_log"] = (prev + "; " if prev else "") + f"{col}: {p_}>{t} [tesseract]"
+            if abs(v) < ARB_UNSURE:
+                n_unsure += 1
+                rr = str(df.at[idx, "review_reason"]) if str(df.at[idx, "review_reason"]) not in ("", "nan") else ""
+                df.at[idx, "review_reason"] = (rr + "|" if rr else "") + f"{col}_engine_pick"
+                df.at[idx, "needs_review"] = "Y"
+    log(f"  names: PaddleOCR and Tesseract disagreed on {n_diff} fields -> Tesseract's reading used for {n_t}, "
+        f"{n_unsure} close calls flagged (*_engine_pick)")
+    return df, agreed
+
+
 HOUSE_CANON_MIN = 4       # a village / locality spelling seen at least this often is the reference spelling
 HOUSE_CANON_RATIO = 1.5     # ... and at least this many times more often than the variant being normalised
 HOUSE_CANON_SIM = 0.74    # spelling similarity (spaces ignored)
@@ -1296,7 +1597,13 @@ def canon_house(df, log=print):
 
 
 def finalize_names(df, vocab_path, log=print):
-    """Vocabulary pass over a finished DataFrame; updates the persistent vocab file."""
+    """Engine arbitration + vocabulary pass over a finished DataFrame; updates the persistent vocab / lexicon files."""
+    lex_path = (str(vocab_path) + ".agreed.json") if vocab_path else None
+    lex_loaded = load_vocab(lex_path) if lex_path else collections.Counter()
+    df, agreed = arbitrate_names(df, lex_loaded, log)
+    if lex_path and agreed:
+        save_vocab(lex_path, lex_loaded + agreed)
+    df = df.drop(columns=[c for c in TESS_COLS if c in df.columns])
     df = canon_house(df, log)
     if vocab_path is None or df.empty:
         return df
@@ -1350,7 +1657,7 @@ def upload_files(files, dest, endpoint=None, presign_hours=0):
 def run_folder(folder: pathlib.Path, out_dir: pathlib.Path, workers: int,
                recursive: bool, device, cpu_threads: int, limit=None,
                vocab_path=None, upload=None, s3_endpoint=None, presign_hours=0, second_opinion="auto",
-               pool=None, gzip_csv=False):
+               pool=None, gzip_csv=False, max_rows=0, slim=False):
     # natural order: ...-1-WI, ...-2-WI, ...-10-WI, ...-100-WI  (plain sorted() gave 1, 10, 100, 101 ...)
     pdfs = sorted(folder.rglob("*.pdf") if recursive else folder.glob("*.pdf"),
                   key=lambda p: natural_key(p.relative_to(folder)))
@@ -1363,14 +1670,16 @@ def run_folder(folder: pathlib.Path, out_dir: pathlib.Path, workers: int,
     out_dir.mkdir(parents=True, exist_ok=True)
     combined_path = out_dir / "_combined.csv"
     partial_path = out_dir / "_combined.partial.csv"
-    if partial_path.exists():
-        partial_path.unlink()
+    for old in list(out_dir.glob("_combined*.csv")) + list(out_dir.glob("_combined*.csv.gz")) + list(out_dir.glob("_combined*.partial*")):
+        old.unlink()                       # leftovers of an earlier run of this folder (a re-run may produce a different number of files)
+    chunk_paths = []                       # with max_rows: _combined.partial_001.csv, _002 ... each closed at a PDF boundary
+    chunk_rows = 0
     limit_note = f" (limited from {total_found} found)" if limit else ""
     print(f"Found {total_found} PDFs, processing {len(pdfs)}{limit_note}, in natural order "
           f"({pdfs[0].name} ... {pdfs[-1].name}). "
           f"Running with {workers} worker process(es), {cpu_threads} CPU threads each "
           f"(~{workers * cpu_threads} threads total -- watch Activity Monitor)...")
-    print(f"Writing one combined CSV only (no per-PDF CSVs): {combined_path}")
+    print(f"Writing {'CSV files of ~' + format(max_rows, ',') + ' rows (split at PDF boundaries)' if max_rows else 'one combined CSV only (no per-PDF CSVs)'}: {out_dir}")
 
     header_written = False
     total_rows = processed = 0
@@ -1398,54 +1707,70 @@ def run_folder(folder: pathlib.Path, out_dir: pathlib.Path, workers: int,
                 if res is None:
                     continue
                 name, df = res
-                df.to_csv(partial_path, mode="a" if header_written else "w",
-                          header=not header_written, index=False, encoding="utf-8-sig")
+                if slim:
+                    df = df.drop(columns=[c for c in ("raw_ocr_body", "stamp_px") if c in df.columns])
+                if max_rows:
+                    if not chunk_paths or chunk_rows >= max_rows:      # next PDF starts a new file
+                        chunk_paths.append(out_dir / f"_combined.partial_{len(chunk_paths) + 1:03d}.csv")
+                        chunk_rows = 0
+                    target, first = chunk_paths[-1], chunk_rows == 0
+                else:
+                    target, first = partial_path, not header_written
+                df.to_csv(target, mode="w" if first else "a", header=first, index=False, encoding="utf-8-sig")
+                chunk_rows += len(df)
                 header_written = True
                 total_rows += len(df)
                 processed += 1
+                el = max(time.time() - t_start, 1e-9)
                 print(f"  [{processed}/{len(pdfs)}] {name}: {len(df)} cards "
-                      f"(combined total: {total_rows})", flush=True)
+                      f"(total {total_rows}, {total_rows / el:.1f} cards/s)", flush=True)
 
     finally:
         if own_pool:
             pool.shutdown()
 
+    out_files = []
     if header_written:
-        if vocab_path:
-            allrows = pd.read_csv(partial_path, dtype=str, keep_default_na=False, encoding="utf-8-sig")
-            allrows = finalize_names(allrows, vocab_path)
-            allrows.to_csv(combined_path, index=False, encoding="utf-8-sig")
-            partial_path.unlink()
-        else:
-            os.replace(partial_path, combined_path)
+        parts = chunk_paths if max_rows else [partial_path]
+        for k, part in enumerate(parts, 1):
+            final = out_dir / (f"_combined_{k:03d}.csv" if max_rows else "_combined.csv")
+            rows_ = pd.read_csv(part, dtype=str, keep_default_na=False, encoding="utf-8-sig")
+            finalize_names(rows_, vocab_path).to_csv(final, index=False, encoding="utf-8-sig")
+            part.unlink()
+            out_files.append(final)
     else:
         # nothing succeeded -- still write an (empty, header-only) combined
         # CSV so downstream tooling that expects the file to exist doesn't break
         pd.DataFrame(columns=FIELDNAMES).to_csv(combined_path, index=False, encoding="utf-8-sig")
+        out_files.append(combined_path)
     print(f"\nDone: {processed}/{len(pdfs)} PDFs processed, {total_rows} total cards "
           f"in {time.time() - t_start:.0f}s.")
     if failed:
         (out_dir / "_failed.txt").write_text("\n".join(failed), encoding="utf-8")
         print(f"FAILED PDFs ({len(failed)}) listed in {out_dir / '_failed.txt'}", file=sys.stderr)
-    if gzip_csv and combined_path.exists():
+    if gzip_csv:
         import gzip, shutil
-        gz_path = combined_path.with_name("_combined.csv.gz")
-        with open(combined_path, "rb") as fi, gzip.open(gz_path, "wb", compresslevel=9) as fo:
-            shutil.copyfileobj(fi, fo)
-        combined_path.unlink()                       # CSV text of this kind compresses ~8-10x
-        combined_path = gz_path
-    print(f"Combined CSV: {combined_path}")
+        gz = []
+        for f_ in out_files:
+            g_ = f_.with_name(f_.name + ".gz")
+            with open(f_, "rb") as fi, gzip.open(g_, "wb", compresslevel=6) as fo:
+                shutil.copyfileobj(fi, fo)
+            f_.unlink()                              # CSV text of this kind compresses ~7-10x
+            gz.append(g_)
+        out_files = gz
+    print(f"Output: {', '.join(f.name for f in out_files)}")
 
     import json
     info = {"version": VERSION, "folder": str(folder), "pdfs_found": total_found, "pdfs_processed": processed,
-            "pdfs_failed": failed, "cards": total_rows, "first_pdf": pdfs[0].name, "last_pdf": pdfs[-1].name,
+            "pdfs_failed": failed, "cards": total_rows, "files": [f.name for f in out_files], "first_pdf": pdfs[0].name, "last_pdf": pdfs[-1].name,
             "seconds": round(time.time() - t_start, 1), "complete": (not failed and len(pdfs) == total_found),
             "finished_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
     info_path = out_dir / "_run_info.json"                # also the "this folder is done" marker for --root resume
     info_path.write_text(json.dumps(info, ensure_ascii=False, indent=2), encoding="utf-8")
     if upload:
         tag = folder.resolve().name
-        files = {combined_path: f"{tag}/{combined_path.name}", info_path: f"{tag}/_run_info.json"}
+        files = {f_: f"{tag}/{f_.name}" for f_ in out_files}
+        files[info_path] = f"{tag}/_run_info.json"
         if failed:
             files[out_dir / "_failed.txt"] = f"{tag}/_failed.txt"
         upload_files(files, upload, s3_endpoint, presign_hours)
@@ -1454,7 +1779,7 @@ def run_folder(folder: pathlib.Path, out_dir: pathlib.Path, workers: int,
 
 def run_root(root: pathlib.Path, out_root: pathlib.Path, workers, device, cpu_threads, limit=None, vocab_path=None,
              upload=None, s3_endpoint=None, presign_hours=0, second_opinion="auto", gzip_csv=False,
-             force=False, only=None, recursive=False):
+             force=False, only=None, recursive=False, max_rows=0, slim=False):
     """Every sub-folder of `root` that contains PDFs is one job (downloads/1, downloads/2 ... downloads/100).
     One worker pool is shared by all of them. A folder is skipped if its _run_info.json says complete, so the
     same command can simply be re-run after an interruption (or when new folders appear). One bad folder
@@ -1487,7 +1812,8 @@ def run_root(root: pathlib.Path, out_root: pathlib.Path, workers, device, cpu_th
             print(f"\n[{n}/{len(subs)}] ===== {sub.name} =====", flush=True)
             try:
                 info = run_folder(sub, out_dir, workers, recursive, device, cpu_threads, limit, vocab_path,
-                                  upload, s3_endpoint, presign_hours, second_opinion, pool=pool, gzip_csv=gzip_csv)
+                                  upload, s3_endpoint, presign_hours, second_opinion, pool=pool, gzip_csv=gzip_csv,
+                                  max_rows=max_rows, slim=slim)
                 summary.append({"folder": sub.name, **({k: info[k] for k in ("pdfs_found", "pdfs_processed", "cards", "seconds", "complete")} if info else {})})
             except Exception as exc:                         # keep going with the next folder
                 print(f"  ! folder {sub.name} failed: {type(exc).__name__}: {exc}", file=sys.stderr)
@@ -1519,7 +1845,14 @@ def main():
     ap.add_argument("--root", help="Process EVERY sub-folder of this directory (e.g. downloads -> downloads/1 ... downloads/100); "
                                    "outputs go to --out/<sub-folder>/. Finished folders are skipped, so re-running resumes.")
     ap.add_argument("--only", nargs="+", help="With --root: only these sub-folder names (e.g. --only 86 2 3)")
+    ap.add_argument("--only-file", help="With --root: text file with one sub-folder name per line (use for a list of 100 of the 403 folders)")
     ap.add_argument("--force", action="store_true", help="With --root: redo folders that are already marked complete")
+    ap.add_argument("--max-rows", type=int, default=100000,
+                     help="Start a new CSV (_combined_001.csv, _002 ...) once the current one holds this many rows; "
+                          "files are cut between PDFs (parts), never inside one, so a file can exceed the limit by < 1 PDF. "
+                          "0 = one file per folder. Excel's limit is 1,048,576 rows per sheet (default 100000).")
+    ap.add_argument("--slim", action="store_true", help="Leave out the audit columns raw_ocr_body and stamp_px "
+                                                       "(about 60%% smaller CSVs; you lose the data needed to debug a wrong name)")
     ap.add_argument("--gzip", action="store_true", help="Store _combined.csv.gz instead of _combined.csv (about 8-10x smaller)")
     ap.add_argument("--device", default=None, help="e.g. 'cpu' -- passed straight to PaddleOCR's TextRecognition")
     ap.add_argument("--workers", type=int, default=1,
@@ -1544,6 +1877,20 @@ def main():
                      help="When the second Hindi model (v3) reads name crops: 'auto' (default) = only where the "
                           "primary v5 reading is unsure -- v3 is much less accurate and roughly doubles Hindi OCR "
                           "time; 'all' = every crop (v11 behaviour); 'off' = never.")
+    ap.add_argument("--rec-width", type=int, default=0,
+                     help="EXPERIMENT (default 0 = off). The recognition models pad every crop to 320 px wide, but these "
+                          "crops are only ~65-105 px wide at model height, so 70-80%% of every model input is empty. "
+                          "--rec-width 160 lets crops use a narrower input (batches are sorted by width so they stay uniform). "
+                          "Compare speed AND the CSV against a normal run on the same PDFs before trusting it.")
+    ap.add_argument("--tessdata", metavar="DIR",
+                    help="Folder that contains hin.traineddata (Tesseract's Hindi model, ideally the 'tessdata_best' one). "
+                         "Names are read by Tesseract as well as PaddleOCR and the better reading is kept. Found automatically "
+                         "when installed with: brew install tesseract tesseract-lang")
+    ap.add_argument("--tess", action="store_true", help="Also read names with Tesseract and keep the better reading (off by default: names come from the "
+                                                         "PaddleOCR v5 + v3 models only).")
+    ap.add_argument("--deleted-only", action="store_true",
+                    help="Output only the deleted cards (status letter E/S/R/M/Q or a DELETED stamp). The Hindi/English models run only on those "
+                         "cards (plus the serial number of every card, for the sequence check), so the run is many times faster.")
     ap.add_argument("--no-vocab", action="store_true", help="Disable the vocabulary correction pass.")
     ap.add_argument("--upload", metavar="s3://BUCKET/PREFIX",
                      help="After the run, upload the CSV to S3 (or any S3-compatible store) under "
@@ -1554,6 +1901,15 @@ def main():
                      help="With --upload, also print a temporary download link valid this many hours (max 168).")
     args = ap.parse_args()
     vocab_path = None if args.no_vocab else args.vocab
+    if args.rec_width:
+        os.environ["OCR_REC_WIDTH"] = str(args.rec_width)      # inherited by the worker processes
+    if args.deleted_only:
+        os.environ["OCR_DELETED_ONLY"] = "1"
+    if args.tess:
+        os.environ["OCR_USE_TESS"] = "1"
+        if args.tessdata:
+            os.environ["OCR_TESSDATA"] = args.tessdata
+        tess_setup(args.tessdata)                               # prints once whether the Hindi Tesseract reader is available
 
     if not args.pdf and not args.folder and not args.root:
         ap.error("provide a PDF file, --folder DIR, or --root DIR for batch mode")
@@ -1561,14 +1917,16 @@ def main():
     if args.root:
         run_root(pathlib.Path(args.root), pathlib.Path(args.out), args.workers, args.device, args.cpu_threads,
                  args.limit, vocab_path, args.upload, args.s3_endpoint, args.presign_hours, args.second_opinion,
-                 args.gzip, args.force, args.only, args.recursive)
+                 args.gzip, args.force,
+                 (args.only or []) + (pathlib.Path(args.only_file).read_text(encoding="utf-8").split() if args.only_file else []) or None,
+                 args.recursive, args.max_rows, args.slim)
         return
 
     if args.folder:
         run_folder(pathlib.Path(args.folder), pathlib.Path(args.out), args.workers,
                    args.recursive, args.device, args.cpu_threads, args.limit,
                    vocab_path, args.upload, args.s3_endpoint, args.presign_hours, args.second_opinion,
-                   gzip_csv=args.gzip)
+                   gzip_csv=args.gzip, max_rows=args.max_rows, slim=args.slim)
         return
 
     _limit_threads(args.cpu_threads)

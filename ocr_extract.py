@@ -59,7 +59,7 @@ import base64
 import io
 import pathlib
 import re
-import sys
+import os, sys
 import time
 
 import cv2
@@ -532,6 +532,7 @@ def load_rec(candidates, device):
     for m in candidates:
         try:
             r = TextRecognition(model_name=m, device=device) if device else TextRecognition(model_name=m)
+            set_rec_width(r)
             print(f"[model] loaded {m}", file=sys.stderr); return r, m
         except Exception as e:
             print(f"[model] {m} unavailable ({type(e).__name__}: {str(e)[:80]})", file=sys.stderr)
@@ -555,20 +556,45 @@ def load_rec_all(candidates, device):
     for m in candidates:
         try:
             r = TextRecognition(model_name=m, device=device) if device else TextRecognition(model_name=m)
+            set_rec_width(r)
             print(f"[model] loaded {m}", file=sys.stderr)
             loaded.append((r, m))
         except Exception as e:
             print(f"[model] {m} unavailable ({type(e).__name__}: {str(e)[:80]})", file=sys.stderr)
     return loaded
 
+def set_rec_width(model):
+    """Optional speed experiment (env OCR_REC_WIDTH, set by --rec-width): shrink the minimum input width of the
+    recognition model from its default (320) so short crops are not padded to 320 px. Guarded: if this PaddleOCR
+    version is built differently the model is simply left unchanged."""
+    w = int(os.environ.get("OCR_REC_WIDTH", "0") or 0)
+    if not w:
+        return model
+    try:
+        tf = model.paddlex_predictor.pre_tfs["ReisizeNorm"]
+        c, h, _ = tf.rec_image_shape
+        tf.rec_image_shape = [c, h, w]
+    except Exception as exc:
+        print(f"[rec-width] not applied ({type(exc).__name__}: {exc}) -- model left unchanged", file=sys.stderr)
+    return model
+
+
 def run_rec(model, imgs, label="", bs=64, chunk=500):
-    out, n, t0 = [], len(imgs), time.time()
+    """Recognise crops. They are fed to the model sorted by width (a batch is padded to its widest crop, so similar
+    widths per batch means less wasted compute) and the results are returned in the ORIGINAL order."""
+    n, t0 = len(imgs), time.time()
+    order = sorted(range(n), key=lambda i: imgs[i].shape[1] / max(imgs[i].shape[0], 1))
+    out_sorted = []
     for i in range(0, n, chunk):
-        for r in model.predict(input=imgs[i:i + chunk], batch_size=bs):
+        sub = [imgs[j] for j in order[i:i + chunk]]
+        for r in model.predict(input=sub, batch_size=bs):
             d = r if "rec_text" in r else r.json.get("res", r.json)
-            out.append((str(d["rec_text"]).strip(), float(d["rec_score"])))
+            out_sorted.append((str(d["rec_text"]).strip(), float(d["rec_score"])))
         done = min(i + chunk, n)
         log(f"    {label} OCR: {done}/{n} crops ({done * 100 // n}%) - {time.time() - t0:.0f}s")
+    out = [None] * n
+    for pos, j in enumerate(order):
+        out[j] = out_sorted[pos]
     return out
 
 # ------------------------------------------------------------------ cleaning
