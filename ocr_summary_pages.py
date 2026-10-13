@@ -42,10 +42,10 @@ import unicodedata
 import cv2
 import numpy as np
 
-VERSION = "s1"
+VERSION = "s2"
 REF_W = 1187.0          # page width the layout constants below were measured on (AC 1/2/174 PDFs); everything scales with W/REF_W
 
-FIELDS = ["ac_part", "ac_name", "booth_number", "booth_name", "total_electors"]
+FIELDS = ["ac_part", "ac_name", "booth_number", "booth_name", "last_serial", "total_electors"]
 GROUPS = [("mool", "mool"), ("parivardhan", "add"), ("vilopan", "del"), ("net", "net")]
 for _g, _ in GROUPS:
     FIELDS += [f"{_g}_male", f"{_g}_female", f"{_g}_third", f"{_g}_total"]
@@ -299,6 +299,30 @@ def fix_booth_text(t):
     return re.sub(r"\s+", " ", t).strip()
 
 
+_WORD_FIXES = {"मधय": "मध्य", "रकूल": "स्कूल", "वधालय": "विद्यालय", "विधालय": "विद्यालय", "पाथिमक": "प्राथमिक",
+               "पसाद": "प्रसाद", "पाइमरी": "प्राइमरी"}
+
+
+def fix_words(t):
+    """Booth / AC names only: conjunct letters the Hindi models keep dropping in recurring institutional words
+    (संख्या -> संखया, विद्यालय -> वधालय, स्कूल -> रकूल, मध्य -> मधय ...). A short fixed list, no person-name dictionary.
+    The room label 'संखया', 'संखयान 1', 'संखया2', 'संखयाड' is rebuilt as 'संख्या' (+ '-<n>' when the digit was read)."""
+    toks = unicodedata.normalize("NFC", t or "").split()
+    out, i = [], 0
+    while i < len(toks):
+        tk = toks[i]
+        m = re.match(r"^संख\S*?(?:[-–]?(\d+))?$", tk)
+        if m and len(tk) <= 9:
+            d = m.group(1)
+            if not d and i + 1 < len(toks) and re.fullmatch(r"\d{1,2}", toks[i + 1]):
+                d = toks[i + 1]; i += 1
+            out.append("संख्या" + (f"-{d}" if d else ""))
+        else:
+            out.append(_WORD_FIXES.get(tk, tk))
+        i += 1
+    return " ".join(out)
+
+
 def classify(t):
     t = unicodedata.normalize("NFC", t or "").replace(" ", "")
     if "नेट" in t or "इलेक्टर" in t or "इलैक्टर" in t:
@@ -346,7 +370,16 @@ def parse_page1(pg, reader, rv):
     ac_g = pg.crop(left + pg.S(430), y0 + ins, ac_r - ins, y1 - ins)
     rr = np.flatnonzero((ac_g < 200).any(1))
     ac_line = ac_g[rr[0]:rr[-1] + 1] if len(rr) else ac_g
-    crops["part"] = prep(pg.crop(max(ac_r, right - pg.S(66)), y0 + ins, right - ins, y1 - ins), s) if len(vl) >= 3 else None
+    crops["part"] = None
+    if len(vl) >= 3:
+        # "भाग संख्या : : <n>" is centred in its cell, so a 3-digit number starts further left than a 1-digit one:
+        # take the LAST ink group (digits sit 1-3 px apart, the gap before them is the width of a space).
+        pg_ = pg.crop(ac_r + ins, y0 + ins, right - ins, y1 - ins)
+        cols_ = np.flatnonzero((pg_ < 200).any(0))
+        if len(cols_):
+            cuts_ = np.flatnonzero(np.diff(cols_) > max(4, int(round(4.5 * s)))) + 1
+            last_ = np.split(cols_, cuts_)[-1]
+            crops["part"] = prep(pg_[:, max(last_[0] - 2, 0):last_[-1] + 3], s)
 
     # --- section 3: booth cell = lowest tall cell with a divider near 42% of the page width
     booth = None
@@ -402,6 +435,7 @@ def parse_page1(pg, reader, rv):
         resv = [name_t.pop()]
     nm = " ".join(t[0] for t in name_t).strip(" :-()（）")
     rs = " ".join(t[0] for t in resv).strip(" ()（）")
+    nm = fix_words(nm)
     rv["ac_name"] = f"{nm} ({rs})" if nm and rs else nm              # the text after the hyphen: "लखनऊ मध्य (सामान्य)"
     rv["_conf"].extend(t[1] for t in name_t)
     if not rv["ac_name"]:
@@ -428,7 +462,7 @@ def parse_page1(pg, reader, rv):
             rest = rest[1:]
         addr = [t for ln in addr_lines for t in ln]
         voted = vote_with_address(rest, addr)
-        rv["booth_name"] = fix_booth_text(" ".join(t for t, _ in voted).strip(" -").translate(_DIG))
+        rv["booth_name"] = fix_words(fix_booth_text(" ".join(t for t, _ in voted).strip(" -").translate(_DIG)))
         rv["_conf"].extend(sc for _, sc in voted)
         if no_tok is not None:
             nb = cell_values(reader, [lines[2][0]["img"]])[0] if len(lines) > 2 and lines[2] else ([], 0)
@@ -447,6 +481,8 @@ def parse_page1(pg, reader, rv):
     if cells:
         cv = cell_values(reader, cells)
         rv["_conf"].extend(sc for _, sc in cv[2:])
+        if cv[1][0]:
+            rv["last_serial"] = cv[1][0][0]                  # अंतिम क्रम संख्या: the last serial number printed in this part
         vals, rep, ok = solve_row([c for c, _ in cv[2:]])
         if rep: flags.append("page1_repaired_by_sum")
         if not ok: flags.append("page1_counts_sum_mismatch")
@@ -566,7 +602,9 @@ def process_pdf(path, reader):
             if rv["total_electors"] != rv["net_total"]: fl.append("page1_total_differs_from_net_total")
             for a, b in (("page1_male", "net_male"), ("page1_female", "net_female"), ("page1_third", "net_third")):
                 if rv[a] != "" and rv[b] != "" and rv[a] != rv[b]: fl.append(f"{a}_differs_from_{b}")
-        for k in ("ac_name", "booth_number", "booth_name", "total_electors", "net_total", "mool_total"):
+        if rv["last_serial"] != "" and rv["total_electors"] != "" and int(rv["total_electors"]) > int(rv["last_serial"]):
+            fl.append("total_exceeds_last_serial")
+        for k in ("ac_name", "booth_number", "booth_name", "last_serial", "total_electors", "net_total", "mool_total"):
             if rv[k] == "": fl.append(f"missing_{k}")
     except Exception as exc:                                  # one bad PDF never stops the run
         rv["_flags"].append(f"error_{type(exc).__name__}: {str(exc)[:80]}")
@@ -605,26 +643,33 @@ def natural_key(p):
 GROUP_TITLES = {"mool": "मूल नामावली  (Mool Namavali)", "parivardhan": "परिवर्धन की सूची  (Additions)",
                 "vilopan": "विलोपन की सूची  (Deletions)", "net": "नेट इलेक्टर  (Net electors)"}
 GROUP_COLORS = {"mool": "DDEBF7", "parivardhan": "E2EFDA", "vilopan": "FCE4D6", "net": "FFF2CC"}
-LABELS = {"ac_part": "AC_Part", "ac_name": "AC Name", "booth_number": "Booth No.", "booth_name": "Booth Name",
+LABELS = {"ac_part": "AC_Part", "ac_name": "AC Name", "booth_number": "Booth No. (as printed)", "booth_name": "Booth Name",
+          "last_serial": "अंतिम क्रम संख्या (Last Serial No.)",
           "total_electors": "Total Electors", "ac_number": "AC No. (PDF)", "part_number": "Part No. (PDF)",
           "page1_male": "Page 1 Male", "page1_female": "Page 1 Female", "page1_third": "Page 1 Third",
           "pdf": "PDF file", "pages": "Pages", "needs_review": "Needs review", "review_reason": "Review reason",
           "confidence": "Confidence"}
+NUMERIC_EXTRA = ("booth_number", "last_serial", "total_electors", "ac_number", "part_number", "pages", "confidence", "n_parts")
 
 
-def write_xlsx(rows, path):
-    """The only output file. The four count blocks get a merged coloured heading with Male / Female / Third / Total
+def write_xlsx(rows, path, fields=None, labels=None, widths=None):
+    """The only output file. The four count blocks get a merged coloured heading with Male / Female / Third gender / Total
     underneath, header + first columns frozen, filter on, rows that need a look highlighted. Written to a temp file
     and renamed, so an interrupted run never leaves a broken workbook."""
     from openpyxl import Workbook
     from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
     from openpyxl.utils import get_column_letter
+    fields = fields or FIELDS
+    labels = dict(LABELS, **(labels or {}))
+    wd = {"ac_part": 11, "ac_name": 24, "booth_number": 12, "booth_name": 55, "last_serial": 15, "total_electors": 11,
+          "pdf": 34, "review_reason": 36, "needs_review": 10, "parts": 30, "parts_to_check": 16, "match_check": 14}
+    wd.update(widths or {})
     wb = Workbook(); ws = wb.active; ws.title = "summary"
     thin = Side(style="thin", color="BFBFBF"); box = Border(left=thin, right=thin, top=thin, bottom=thin)
     bold = Font(bold=True)
     fill = lambda c: PatternFill("solid", fgColor=c)
     sub = {"male": "Male", "female": "Female", "third": "Third gender", "total": "Total"}
-    plan = [(f, next((g for g in GROUP_TITLES if f.startswith(g + "_")), None)) for f in FIELDS]
+    plan = [(f, next((g for g in GROUP_TITLES if f.startswith(g + "_")), None)) for f in fields]
     i = 0
     while i < len(plan):
         fld, g = plan[i]
@@ -640,28 +685,27 @@ def write_xlsx(rows, path):
             i += 4
         else:
             ws.merge_cells(start_row=1, start_column=c, end_row=2, end_column=c)
-            h = ws.cell(1, c, LABELS.get(fld, fld)); h.font = bold; h.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+            h = ws.cell(1, c, labels.get(fld, fld)); h.font = bold; h.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
             for r_ in (1, 2):
                 ws.cell(r_, c).fill = fill("D9D9D9"); ws.cell(r_, c).border = box
-            ws.column_dimensions[get_column_letter(c)].width = {"ac_part": 9, "ac_name": 24, "booth_number": 10, "booth_name": 55,
-                "total_electors": 11, "pdf": 34, "review_reason": 36, "needs_review": 10}.get(fld, 12)
+            ws.column_dimensions[get_column_letter(c)].width = wd.get(fld, 12)
             i += 1
-    numeric = {f for f, _ in plan if f.split("_")[-1] in ("male", "female", "third", "total") or f in ("booth_number", "total_electors", "ac_number", "part_number", "pages", "confidence")}
+    numeric = {f for f, _ in plan if f.split("_")[-1] in ("male", "female", "third", "total") or f in NUMERIC_EXTRA}
     for r, row in enumerate(rows, 3):
-        flag = row.get("needs_review") == "Y"
+        flag = row.get("needs_review") == "Y" or bool(row.get("parts_to_check")) or row.get("match_check") == "verify"
         for c, (fld, g) in enumerate(plan, 1):
             v = row.get(fld, "")
             if fld in numeric and v not in ("", None):
                 try: v = float(v) if fld == "confidence" else int(float(v))
                 except (ValueError, TypeError): pass
             cell = ws.cell(r, c, v if v is not None else ""); cell.border = box
-            if fld == "booth_name": cell.alignment = Alignment(wrap_text=True, vertical="top")
+            if fld in ("booth_name", "parts"): cell.alignment = Alignment(wrap_text=True, vertical="top")
             elif fld in numeric: cell.alignment = Alignment(horizontal="center")
             if g == "net": cell.font = bold
             if fld == "confidence": cell.number_format = "0.00"
-            if flag and fld in ("needs_review", "review_reason", "ac_part"): cell.fill = fill("F8CBAD")
+            if flag and fld in ("needs_review", "review_reason", "ac_part", "parts_to_check", "match_check"): cell.fill = fill("F8CBAD")
     ws.freeze_panes = ws.cell(3, 3)
-    ws.row_dimensions[1].height = 24
+    ws.row_dimensions[1].height = 30
     ws.auto_filter.ref = f"A2:{get_column_letter(len(plan))}{max(len(rows) + 2, 3)}"
     path = pathlib.Path(path)
     tmp = path.with_name(path.stem + ".tmp.xlsx")
@@ -669,11 +713,125 @@ def write_xlsx(rows, path):
     os.replace(tmp, path)
 
 
+# ----------------------------------------------------------------------------------------------- booths: one row per building
+_ROOM_TAIL = re.compile(r"\s*(?:कक्ष|क्ष|कमरा|रूम|रुम)?\s*(?:संख\S*|सं\.?|नं\.?|न|नम्बर|नंबर)\s*[-–:.]?\s*\S{0,3}\s*$")
+BOOTH_FIELDS = (["ac_part", "ac_name", "booth_number", "booth_name", "total_electors"]
+                + [f"{g}_{k}" for g, _ in GROUPS for k in ("male", "female", "third", "total")]
+                + ["parts", "n_parts", "parts_to_check", "match_check"])
+BOOTH_LABELS = {"booth_number": "Booth No.", "parts": "Part No. (PDF)", "n_parts": "No. of parts",
+                "parts_to_check": "Parts needing review", "match_check": "Name match"}
+
+
+def booth_base(name):
+    """Booth name without the room label ('कक्ष संख्या-2', 'रूम न-3' ...): the building."""
+    n = unicodedata.normalize("NFC", name or "").translate(_DIG)
+    b = _ROOM_TAIL.sub("", n).strip(" ,-")
+    return b if len(b.replace(" ", "")) >= 8 else n.strip()
+
+
+def booth_key(base):
+    """Comparison key only (never written out): drops the things the models get wrong or that spell the same word
+    several ways -- halant, anusvara, nukta, short/long vowel signs, punctuation, spaces."""
+    b = unicodedata.normalize("NFD", base).translate(_DIG)
+    for a, z in (("\u093c", ""), ("\u094d", ""), ("\u0902", ""), ("\u0901", ""), ("ॉ", "ा"), ("ि", "ी"), ("ु", "ू"), ("ऑ", "आ")):
+        b = b.replace(a, z)
+    return re.sub(r"[^\u0900-\u097F0-9]|[\u0966-\u096F]|0", "", b)
+
+
+def _same_numbers(a, b):
+    f = lambda t: re.findall(r"[1-9]\d*", t.translate(_DIG))
+    return f(a) == f(b)
+
+
+BOOTH_SIM = 0.86            # spelling-insensitive similarity that merges two parts anywhere in the AC
+BOOTH_SIM_NEXT = 0.76       # ... lower bar for neighbouring parts (n, n+1): the same building is usually printed in consecutive parts
+BOOTH_VERIFY = 0.85         # a group whose least similar pair is below this is marked "verify"
+
+
+def combine_booths(rows, ac):
+    """rows: summary rows (dicts of strings). Parts whose booth names match (fuzzy, room label ignored) become ONE row
+    with booth number 1 and the counts added up. Returns the list of combined rows."""
+    import collections, difflib
+    items = []
+    for r in rows:
+        try:
+            part = int(str(r["ac_part"]).split("_")[-1])        # from the PDF file name (the printed part number is only a cross-check)
+        except ValueError:
+            part = 10 ** 6
+        b = booth_base(r.get("booth_name", ""))
+        items.append(dict(r=r, part=part, base=b, key=booth_key(b)))
+    items.sort(key=lambda x: x["part"])
+    n = len(items)
+    par = list(range(n))
+
+    def find(x):
+        while par[x] != x:
+            par[x] = par[par[x]]; x = par[x]
+        return x
+
+    sim = {}
+    for i in range(n):
+        if not items[i]["key"]:
+            continue
+        for j in range(i + 1, n):
+            a, b = items[i]["key"], items[j]["key"]
+            if not b or abs(len(a) - len(b)) > 14:
+                continue
+            if abs(items[i]["part"] - items[j]["part"]) > 1 and difflib.SequenceMatcher(None, a, b).quick_ratio() < BOOTH_SIM:
+                continue
+            ratio = difflib.SequenceMatcher(None, a, b, autojunk=False).ratio()
+            sim[(i, j)] = ratio
+            if not _same_numbers(items[i]["base"], items[j]["base"]):
+                continue
+            if ratio >= BOOTH_SIM or (abs(items[i]["part"] - items[j]["part"]) <= 1 and ratio >= BOOTH_SIM_NEXT):
+                par[find(i)] = find(j)
+    groups = collections.defaultdict(list)
+    for i in range(n):
+        groups[find(i)].append(i)
+    ac_names = collections.Counter(x["r"].get("ac_name", "") for x in items if x["r"].get("ac_name"))
+    ac_name = ac_names.most_common(1)[0][0] if ac_names else ""
+    out = []
+    for k, ids in enumerate(sorted(groups.values(), key=lambda v: min(items[i]["part"] for i in v)), 1):
+        members = [items[i] for i in sorted(ids, key=lambda i: items[i]["part"])]
+        names = collections.Counter(m["base"] for m in members if m["base"])
+        top = max(names.items(), key=lambda kv: (kv[1], len(kv[0])))[0] if names else ""
+        row = {"ac_part": f"{ac}_B{k}", "ac_name": ac_name, "booth_number": 1, "booth_name": top}
+        for fld in ["total_electors"] + [f"{g}_{x}" for g, _ in GROUPS for x in ("male", "female", "third", "total")]:
+            vals = [m["r"].get(fld, "") for m in members]
+            nums = [int(float(v)) for v in vals if v not in ("", None)]
+            row[fld] = sum(nums) if nums else ""
+            if len(nums) != len(members):
+                row["match_check"] = "verify"                  # a part has no reading for this number: the sum is incomplete
+        row["parts"] = ", ".join(str(m["part"]) for m in members)
+        row["n_parts"] = len(members)
+        row["parts_to_check"] = ", ".join(str(m["part"]) for m in members if m["r"].get("needs_review") == "Y")
+        low = min([sim.get((a, b), 1.0) for a in ids for b in ids if a < b] or [1.0])
+        if low < BOOTH_VERIFY:
+            row["match_check"] = "verify"
+        row.setdefault("match_check", "")
+        out.append(row)
+    return out
+
+
+def booth_path_for(summary_path):
+    p = pathlib.Path(summary_path)
+    return p.with_name(p.name.replace("_summary", "_booth_combined") if "_summary" in p.name else p.stem + "_booth_combined.xlsx")
+
+
+def write_booth_xlsx(rows, summary_path, ac):
+    out = booth_path_for(summary_path)
+    comb = combine_booths(rows, ac)
+    write_xlsx(comb, out, fields=BOOTH_FIELDS, labels=BOOTH_LABELS)
+    return out, len(comb)
+
+
 def read_xlsx(path):
     """Rows written by write_xlsx() earlier (for resume), as dicts of strings."""
     from openpyxl import load_workbook
     ws = load_workbook(path, read_only=True).active
     out = []
+    if ws.max_column != len(FIELDS):
+        raise ValueError(f"made by an older version ({ws.max_column} columns instead of {len(FIELDS)})")
     for r in ws.iter_rows(min_row=3, values_only=True):
         if r and r[0] not in (None, ""):
             out.append({f: ("" if v is None else str(v)) for f, v in zip(FIELDS, r)})
@@ -708,6 +866,9 @@ def _run_sub(d, out_xlsx, pool, kw):
     if kw["limit"]:
         pdfs = pdfs[:kw["limit"]]
     out_xlsx.parent.mkdir(parents=True, exist_ok=True)
+    ac = ac_part_of(pdfs[0]).split("_")[0] if pdfs else d.name
+    if out_xlsx.name == "_summary_pending.xlsx":                              # file name from the AC number: 174_summary.xlsx
+        out_xlsx = out_xlsx.with_name(f"{ac}_summary.xlsx")
     rows = []
     if out_xlsx.exists() and not kw["force"]:
         try:
@@ -719,11 +880,14 @@ def _run_sub(d, out_xlsx, pool, kw):
     print(f"\n{d.name}: {len(pdfs)} PDFs, {len(done)} already in {out_xlsx.name}, {len(todo)} to do", flush=True)
     t0, n_rev = time.time(), 0
 
-    def save():
+    def save(final=False):
         majority_ac_name(rows)
         order = {p.name: k for k, p in enumerate(sorted(pdfs, key=natural_key))}
         rows.sort(key=lambda r: order.get(r["pdf"], 10 ** 9))
         write_xlsx(rows, out_xlsx)
+        if final:
+            bx, nb = write_booth_xlsx(rows, out_xlsx, ac)
+            print(f"{d.name}: {len(rows)} parts -> {nb} booths -> {bx.name}")
 
     try:
         it = pool.map(_wrun, map(str, todo)) if pool else (_wrun(str(p)) for p in todo)
@@ -736,7 +900,7 @@ def _run_sub(d, out_xlsx, pool, kw):
                 save()
     finally:
         if rows:
-            save()
+            save(final=True)
     print(f"{d.name}: {len(todo)} PDFs in {time.time() - t0:.0f}s, {n_rev} need review -> {out_xlsx}")
 
 
@@ -765,7 +929,9 @@ def main():
     ap.add_argument("--only", nargs="+", help="with --root: only these sub-folder names, e.g. --only 1 2 174")
     ap.add_argument("--only-file", help="with --root: text file with sub-folder names (whitespace separated)")
     ap.add_argument("--recursive", action="store_true")
-    ap.add_argument("--out", required=True, help="--folder / single PDF: .xlsx path.  --root: output directory")
+    ap.add_argument("--out", help="--folder: a folder (file is named <AC number>_summary.xlsx) or an .xlsx path.  --root: output directory")
+    ap.add_argument("--combine", metavar="SUMMARY.xlsx",
+                    help="No PDF reading: build the booth-combined workbook (<AC>_booth_combined.xlsx, same folder) from an existing summary workbook")
     ap.add_argument("--workers", type=int, default=1)
     ap.add_argument("--cpu-threads", type=int, default=4)
     ap.add_argument("--device", default=None)
@@ -775,9 +941,20 @@ def main():
                     help="paddle (default) = PaddleOCR recognition models. tess = Tesseract, only a stand-in for machines without PaddleOCR")
     ap.add_argument("--tessdata", help="with --engine tess: folder containing hin.traineddata")
     a = ap.parse_args()
+    if a.combine:
+        p = pathlib.Path(a.combine)
+        rows = read_xlsx(p)
+        ac = (rows[0]["ac_part"].split("_")[0] if rows else p.stem.split("_")[0])
+        bx, nb = write_booth_xlsx(rows, p, ac)
+        print(f"{len(rows)} parts -> {nb} booths -> {bx}")
+        return
     if not (a.pdf or a.folder or a.root):
         ap.error("give a PDF, --folder DIR or --root DIR")
-    if not a.root and pathlib.Path(a.out).suffix.lower() != ".xlsx":
+    if not a.out:
+        ap.error("--out is required")
+    if not a.root and pathlib.Path(a.out).suffix.lower() not in (".xlsx", ".csv"):
+        a.out = str(pathlib.Path(a.out) / "_summary_pending.xlsx")            # --out is a folder: file name = <AC number>_summary.xlsx
+    elif not a.root and pathlib.Path(a.out).suffix.lower() == ".csv":
         a.out = str(pathlib.Path(a.out).with_suffix(".xlsx"))
         print(f"(output is an Excel file only: writing {a.out})")
     kw = dict(workers=a.workers, engine=a.engine, device=a.device, cpu_threads=a.cpu_threads, tessdata=a.tessdata,
@@ -795,7 +972,7 @@ def main():
         else:
             _winit(a.engine, a.device, a.cpu_threads, a.tessdata)
         for d in subs:
-            _run_sub(d, out / f"{d.name}_summary.xlsx", pool, kw)
+            _run_sub(d, out / "_summary_pending.xlsx", pool, kw)
         if pool:
             pool.shutdown()
     elif a.folder:

@@ -713,7 +713,12 @@ def resolve_house(items):
     agree = collections.Counter(c[1] for c in cands)
     cands = [(c[0] + (0.1 if agree[c[1]] > 1 else 0.0), c[1], c[2]) for c in cands]
     sc, t, note = max(cands, key=lambda c: c[0])
-    return t, min(sc, 1.0), (["house_no_symbol_fixed"] if note else [])
+    flags = ["house_no_symbol_fixed"] if note else []
+    # two comparably-scored readings that disagree on the DIGITS (not just on a slash): the number is a guess -> say so
+    dg = re.sub(r"\D", "", t)
+    if dg and any(c[1] != t and re.sub(r"\D", "", c[1]) not in ("", dg) and c[0] >= 0.5 * sc for c in cands):
+        flags.append("house_no_readings_disagree")
+    return t, min(sc, 1.0), flags
 
 
 _SERIAL_LETTER = re.compile(r"^([ESRMQ])\s*0*(\d{1,6})$")
@@ -880,7 +885,7 @@ def process_pdf(pdf_path: pathlib.Path, hi_models, en, log=print, dump_review=Fa
       * whitelist cleaning of names (no stray . , - etc.)
     """
     meta = base.parse_filename(pdf_path)
-    ac_part = f"{meta['ac_number']}_{meta['part_number']}" if meta["ac_number"] and meta["part_number"] else pdf_path.stem
+    ac_part = _ac_part(pdf_path)
     t0 = time.time()
     if TESS["ok"] is None and os.environ.get("OCR_USE_TESS"):
         tess_setup(quiet=True)
@@ -1000,6 +1005,21 @@ def process_pdf(pdf_path: pathlib.Path, hi_models, en, log=print, dump_review=Fa
         items = [(key, val) for key, val in d.items() if pat.match(key)]
         prim = [it for it in items if "#" not in it[0]]
         sec = [it for it in items if "#" in it[0]]
+        # A reading that is only the FIRST PART of another reading of the same crop is a truncation, not a competitor:
+        # the cleaner removes a dangling matra and the word is cut short ('ओमप्रक्ु' -> 'ओमप्रक' beat 'ओमप्रकुश' on score
+        # alone, but the card says ओमप्रकाश). Applies within one model's readings.
+        def _drop_truncated(group):
+            texts = [clean_name_field(v[0]) for _, v in group]
+            keep = []
+            for i, (key, val) in enumerate(group):
+                ti = texts[i]
+                if len(ti) >= 3 and any(j != i and len(tj) > len(ti) and tj.startswith(ti) and group[j][1][1] >= 0.5
+                                        for j, tj in enumerate(texts)):
+                    continue
+                keep.append((key, val))
+            return keep or group
+        prim, sec = _drop_truncated(prim), _drop_truncated(sec)
+        items = prim + sec
         p, s2 = _best(prim), _best(sec)
         p_ok = p[1] > 0 and _nlen(p[0]) >= SHORT_NAME_BELOW and p[1] >= 0.5
         if p_ok:
@@ -1315,6 +1335,11 @@ def _worker_init(device, cpu_threads, second_opinion="auto"):
     _WORKER["hname"] = "+".join(m for _, m in hi_models)
 
 
+def _ac_part(pdf_path):
+    m = base.parse_filename(pathlib.Path(pdf_path))
+    return f"{m['ac_number']}_{m['part_number']}" if m["ac_number"] and m["part_number"] else pathlib.Path(pdf_path).stem
+
+
 def _worker_process_pdf(pdf_path_str):
     """Returns the extracted DataFrame itself (no per-PDF CSV file) --
     run_folder() appends it straight into the one combined CSV as each
@@ -1364,6 +1389,8 @@ def natural_key(path):
 VOCAB_RARE_MAX = 4        # a token seen this many times (or fewer) may be corrected (siblings repeat a misread father's name)
 VOCAB_STRONG_MIN = 8      # ... but only into a token seen at least this often
 VOCAB_RATIO = 6           # ... and at least this many times more often than itself
+VOCAB_SUB_RARE_MAX = 2    # matra-substitution fix: only words seen this often or fewer ...
+VOCAB_SUB_RATIO = 8       # ... into a spelling at least this many times more frequent
 VOCAB_MIN_LEN = 3         # never touch very short tokens
 VOCAB_MIN_TOKENS = 4000   # corrector stays OFF until the vocabulary has this many tokens (a single PDF is
                           # too small to tell a misread from a real rare name: it once "fixed" रामू -> राम)
@@ -1384,10 +1411,49 @@ class VocabCorrector:
             for i in range(len(tok) - 1):               # i < last index: the final character is never "restored"
                 self.ins[tok[:i] + tok[i + 1:]].append(tok)
 
+    _MATRAS = "\u093e\u093f\u0940\u0941\u0942\u0943\u0947\u0948\u094b\u094c"
+
+    def _sub_index(self):
+        idx = getattr(self, "_sub", None)
+        if idx is None:
+            idx = self._sub = collections.defaultdict(list)
+            for tok in self.strong:
+                if len(tok) >= 5:
+                    for i in range(1, len(tok) - 1):                  # a vowel sign inside the word (never the last character)
+                        if tok[i] in self._MATRAS:
+                            idx[tok[:i] + "\0" + tok[i + 1:]].append(tok)
+        return idx
+
+    def fix_matra(self, tok):
+        """ONE wrong vowel sign inside a rare word, corrected to the dominant spelling ('ओमप्रकुश' -> 'ओमप्रकाश').
+        Stricter than fix(): the word must be rare (<= VOCAB_SUB_RARE_MAX), the target VOCAB_SUB_RATIO times more
+        frequent and unambiguous. Both spellings of a genuinely common pair (सुनील / सुनिल) are untouched because
+        neither is rare."""
+        n = self.c.get(tok, 0)
+        if not self.enabled or len(tok) < 5 or n > VOCAB_SUB_RARE_MAX:
+            return tok
+        idx = self._sub_index()
+        cands = set()
+        for i in range(1, len(tok) - 1):
+            if tok[i] in self._MATRAS:
+                for v in idx.get(tok[:i] + "\0" + tok[i + 1:], ()):
+                    if v != tok and self.strong[v] >= VOCAB_SUB_RATIO * max(n, 1):
+                        cands.add(v)
+        if not cands:
+            return tok
+        cands = sorted(cands, key=lambda v: -self.strong[v])
+        if len(cands) > 1 and self.strong[cands[0]] < 3 * self.strong[cands[1]]:
+            return tok
+        return cands[0]
+
     def fix(self, tok):
         n = self.c.get(tok, 0)
         if not self.enabled or len(tok) < VOCAB_MIN_LEN or n > VOCAB_RARE_MAX:
             return tok
+        if n <= VOCAB_SUB_RARE_MAX:
+            t2 = self.fix_matra(tok)
+            if t2 != tok:
+                return t2
         cands = [v for v in set(self.ins.get(tok, ())) if v != tok and self.strong[v] >= VOCAB_RATIO * max(n, 1)]
         if not cands:
             return tok
@@ -1625,6 +1691,47 @@ def finalize_names(df, vocab_path, log=print):
 # Cloud upload (S3 or any S3-compatible store: Cloudflare R2, MinIO, Backblaze B2...)
 # ---------------------------------------------------------------------------
 
+INT_COLS = ("serial_no", "age", "pdf_page", "card_on_page", "stamp_px")
+
+
+def write_xlsx_df(df, path):
+    """Excel workbook instead of CSV. house_no, epic_no, names ... are stored as TEXT, so Excel can never turn a house
+    number like 10/10 or 28/1 into a date (it does that when it opens a CSV, and saves the date back into the file)."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Font
+    from openpyxl.utils import get_column_letter
+    wb = Workbook(write_only=True)
+    ws = wb.create_sheet("cards")
+    cols = list(df.columns)
+    widths = {"ac_part": 9, "name": 24, "relation_name": 24, "house_no": 12, "epic_no": 13, "review_reason": 40,
+              "raw_ocr_body": 40, "autocorrect_log": 30, "file_name": 30, "status_meaning": 16}
+    for i, c in enumerate(cols, 1):
+        ws.column_dimensions[get_column_letter(i)].width = widths.get(c, 11)
+    ws.freeze_panes = "B2"
+    ws.auto_filter.ref = f"A1:{get_column_letter(len(cols))}{len(df) + 1}"
+    from openpyxl.cell import WriteOnlyCell
+    head = []
+    for c in cols:
+        hc = WriteOnlyCell(ws, value=c); hc.font = Font(bold=True); head.append(hc)
+    ws.append(head)
+    for rec in df.itertuples(index=False, name=None):
+        row = []
+        for c, v in zip(cols, rec):
+            v = "" if v is None or (isinstance(v, float) and v != v) else v
+            if c in INT_COLS and str(v).strip().lstrip("-").isdigit():
+                v = int(v)
+            elif c == "confidence":
+                try: v = float(v)
+                except (TypeError, ValueError): pass
+            elif isinstance(v, str) and v.startswith(("=", "+", "-", "@")):
+                v = " " + v                                    # never let Excel read a text cell as a formula
+            row.append(v)
+        ws.append(row)
+    tmp = str(path) + ".tmp"
+    wb.save(tmp)
+    os.replace(tmp, path)
+
+
 def upload_files(files, dest, endpoint=None, presign_hours=0):
     """files: {local_path: key_suffix}. dest: s3://bucket/optional/prefix.
     Credentials come from the normal AWS chain (env vars AWS_ACCESS_KEY_ID /
@@ -1662,7 +1769,7 @@ def upload_files(files, dest, endpoint=None, presign_hours=0):
 def run_folder(folder: pathlib.Path, out_dir: pathlib.Path, workers: int,
                recursive: bool, device, cpu_threads: int, limit=None,
                vocab_path=None, upload=None, s3_endpoint=None, presign_hours=0, second_opinion="auto",
-               pool=None, gzip_csv=False, max_rows=0, slim=False, fresh=False):
+               pool=None, gzip_csv=False, max_rows=0, slim=False, fresh=False, xlsx=False):
     # natural order: ...-1-WI, ...-2-WI, ...-10-WI, ...-100-WI  (plain sorted() gave 1, 10, 100, 101 ...)
     pdfs = sorted(folder.rglob("*.pdf") if recursive else folder.glob("*.pdf"),
                   key=lambda p: natural_key(p.relative_to(folder)))
@@ -1674,8 +1781,11 @@ def run_folder(folder: pathlib.Path, out_dir: pathlib.Path, workers: int,
         pdfs = pdfs[:limit]
     out_dir.mkdir(parents=True, exist_ok=True)
     import json
-    combined_path = out_dir / "_combined.csv"
-    for old in list(out_dir.glob("_combined*.csv")) + list(out_dir.glob("_combined*.csv.gz")) + list(out_dir.glob("_combined*.partial*")):
+    ac_no = (base.parse_filename(pdfs[0]).get("ac_number") or "").strip() or folder.name      # file names start with the AC number
+    ac_no = str(int(ac_no)) if ac_no.isdigit() else ac_no
+    combined_path = out_dir / f"{ac_no}_combined.csv"
+    for old in (list(out_dir.glob("*_combined*.csv")) + list(out_dir.glob("*_combined*.csv.gz")) + list(out_dir.glob("*_combined*.xlsx"))
+                + list(out_dir.glob("*_combined*.partial*"))):
         old.unlink()                       # outputs of an earlier (finished or interrupted) run: they are rebuilt below from the saved per-PDF parts
 
     # ---- progress is saved per PDF in <out>/_parts/, so an interrupted run continues where it stopped ----------------
@@ -1770,10 +1880,15 @@ def run_folder(folder: pathlib.Path, out_dir: pathlib.Path, workers: int,
         if cur:
             chunks.append(cur)
         for k, group in enumerate(chunks, 1):
-            final = out_dir / (f"_combined_{k:03d}.csv" if max_rows else "_combined.csv")
+            ext_ = "xlsx" if xlsx else "csv"
+            final = out_dir / (f"{ac_no}_combined_{k:03d}.{ext_}" if max_rows else f"{ac_no}_combined.{ext_}")
             frames = [pd.read_csv(part_files(p_)[0], dtype=str, keep_default_na=False, encoding="utf-8-sig") for p_ in group]
             rows_ = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=FIELDNAMES)
-            finalize_names(rows_, vocab_path).to_csv(final, index=False, encoding="utf-8-sig")
+            out_df_ = finalize_names(rows_, vocab_path)
+            if xlsx:
+                write_xlsx_df(out_df_, final)
+            else:
+                out_df_.to_csv(final, index=False, encoding="utf-8-sig")
             out_files.append(final)
     else:
         # nothing succeeded -- still write an (empty, header-only) combined
@@ -1787,6 +1902,9 @@ def run_folder(folder: pathlib.Path, out_dir: pathlib.Path, workers: int,
         print(f"FAILED PDFs ({len(failed)}) listed in {out_dir / '_failed.txt'} -- run the same command again to retry just those", file=sys.stderr)
     elif (out_dir / "_failed.txt").exists():
         (out_dir / "_failed.txt").unlink()
+    if gzip_csv and xlsx:
+        print("(--gzip is ignored with --xlsx: an .xlsx file is already compressed)")
+        gzip_csv = False
     if gzip_csv:
         import gzip
         gz = []
@@ -1804,7 +1922,7 @@ def run_folder(folder: pathlib.Path, out_dir: pathlib.Path, workers: int,
             "pdfs_found": total_found, "pdfs_processed": len(done_pdfs), "pdfs_resumed_from_earlier_run": resumed,
             "pdfs_failed": failed, "cards": total_cards, "deleted_cards": total_deleted, "rows_written": total_rows,
             "files": [f.name for f in out_files], "first_pdf": pdfs[0].name, "last_pdf": pdfs[-1].name,
-            "per_pdf": [{"pdf": p_.name, "cards": stats[p_.name]["cards"], "deleted": stats[p_.name]["deleted"],
+            "per_pdf": [{"ac_part": _ac_part(p_), "pdf": p_.name, "cards": stats[p_.name]["cards"], "deleted": stats[p_.name]["deleted"],
                          "seconds": stats[p_.name]["seconds"]} for p_ in done_pdfs],
             "seconds": round(time.time() - t_start, 1), "complete": complete,
             "finished_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
@@ -1824,7 +1942,7 @@ def run_folder(folder: pathlib.Path, out_dir: pathlib.Path, workers: int,
 
 def run_root(root: pathlib.Path, out_root: pathlib.Path, workers, device, cpu_threads, limit=None, vocab_path=None,
              upload=None, s3_endpoint=None, presign_hours=0, second_opinion="auto", gzip_csv=False,
-             force=False, only=None, recursive=False, max_rows=0, slim=False):
+             force=False, only=None, recursive=False, max_rows=0, slim=False, xlsx=False):
     """Every sub-folder of `root` that contains PDFs is one job (downloads/1, downloads/2 ... downloads/100).
     One worker pool is shared by all of them. A folder is skipped if its _run_info.json says complete, so the
     same command can simply be re-run after an interruption (or when new folders appear). One bad folder
@@ -1858,7 +1976,7 @@ def run_root(root: pathlib.Path, out_root: pathlib.Path, workers, device, cpu_th
             try:
                 info = run_folder(sub, out_dir, workers, recursive, device, cpu_threads, limit, vocab_path,
                                   upload, s3_endpoint, presign_hours, second_opinion, pool=pool, gzip_csv=gzip_csv,
-                                  max_rows=max_rows, slim=slim, fresh=force)
+                                  max_rows=max_rows, slim=slim, fresh=force, xlsx=xlsx)
                 summary.append({"folder": sub.name, **({k: info[k] for k in ("pdfs_found", "pdfs_processed", "cards", "seconds", "complete")} if info else {})})
             except Exception as exc:                         # keep going with the next folder
                 print(f"  ! folder {sub.name} failed: {type(exc).__name__}: {exc}", file=sys.stderr)
@@ -1898,6 +2016,10 @@ def main():
                           "0 = one file per folder. Excel's limit is 1,048,576 rows per sheet (default 100000).")
     ap.add_argument("--slim", action="store_true", help="Leave out the audit columns raw_ocr_body, stamp_px and file_name (ac_part still tells you the PDF) "
                                                        "(about 60%% smaller CSVs; you lose the data needed to debug a wrong name)")
+    ap.add_argument("--xlsx", action="store_true",
+                    help="Write Excel files (_combined_001.xlsx ...) instead of CSV. Text columns (house_no, epic_no, names) stay text, so Excel "
+                         "cannot turn a house number such as 10/10 into a date -- it does that to CSV files when you open them. "
+                         "With --max-rows 100000 each workbook holds 100k rows (Excel's limit is 1,048,576).")
     ap.add_argument("--gzip", action="store_true", help="Store _combined.csv.gz instead of _combined.csv (about 8-10x smaller)")
     ap.add_argument("--device", default=None, help="e.g. 'cpu' -- passed straight to PaddleOCR's TextRecognition")
     ap.add_argument("--workers", type=int, default=1,
@@ -1964,14 +2086,14 @@ def main():
                  args.limit, vocab_path, args.upload, args.s3_endpoint, args.presign_hours, args.second_opinion,
                  args.gzip, args.force,
                  (args.only or []) + (pathlib.Path(args.only_file).read_text(encoding="utf-8").split() if args.only_file else []) or None,
-                 args.recursive, args.max_rows, args.slim)
+                 args.recursive, args.max_rows, args.slim, args.xlsx)
         return
 
     if args.folder:
         run_folder(pathlib.Path(args.folder), pathlib.Path(args.out), args.workers,
                    args.recursive, args.device, args.cpu_threads, args.limit,
                    vocab_path, args.upload, args.s3_endpoint, args.presign_hours, args.second_opinion,
-                   gzip_csv=args.gzip, max_rows=args.max_rows, slim=args.slim, fresh=args.force)
+                   gzip_csv=args.gzip, max_rows=args.max_rows, slim=args.slim, fresh=args.force, xlsx=args.xlsx)
         return
 
     _limit_threads(args.cpu_threads)
