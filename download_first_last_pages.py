@@ -40,6 +40,7 @@ USAGE
 -----
     python download_first_last_pages.py --acs 174
     python download_first_last_pages.py --acs 86,87,88 --concurrency 32
+    python download_first_last_pages.py --acs-file acs.txt      # ACs listed in a text file
     python download_first_last_pages.py --all
     python download_first_last_pages.py --retry-failed
     python download_first_last_pages.py --acs 174 --test      # check Range support
@@ -565,6 +566,7 @@ def run_test(ac, part):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--acs", help="comma-separated AC numbers, e.g. 174,86")
+    ap.add_argument("--acs-file", help="text file with AC numbers (one per line, or separated by spaces/commas; # starts a comment)")
     ap.add_argument("--all", action="store_true", help="every AC in the CSV / overrides")
     ap.add_argument("--concurrency", type=int, default=24)
     ap.add_argument("--retry-failed", action="store_true",
@@ -596,8 +598,14 @@ def main():
         print(f"Note: {len(missing)} AC(s) have no part count and are skipped: {missing}\n"
               f"Fill them in the CSV or in {OVERRIDES_PATH.name}.\n")
 
-    if args.acs:
-        wanted = {s.strip() for s in args.acs.split(",")}
+    if args.acs or args.acs_file:
+        wanted = set()
+        if args.acs:
+            wanted |= {t.strip() for t in args.acs.split(",") if t.strip()}
+        if args.acs_file:
+            for line in pathlib.Path(args.acs_file).read_text(encoding="utf-8-sig").splitlines():
+                wanted |= {t for t in line.split("#")[0].replace(",", " ").split()}
+        wanted = {str(int(t)) if t.isdigit() else t for t in wanted}      # 001 -> 1
         target = {ac: n for ac, n in counts.items() if ac in wanted}
         nf = wanted - set(target)
         if nf:

@@ -42,7 +42,7 @@ import unicodedata
 import cv2
 import numpy as np
 
-VERSION = "s2"
+VERSION = "s3"
 REF_W = 1187.0          # page width the layout constants below were measured on (AC 1/2/174 PDFs); everything scales with W/REF_W
 
 FIELDS = ["ac_part", "ac_name", "booth_number", "booth_name", "last_serial", "total_electors"]
@@ -722,11 +722,43 @@ BOOTH_LABELS = {"booth_number": "Booth No.", "parts": "Part No. (PDF)", "n_parts
                 "parts_to_check": "Parts needing review", "match_check": "Name match"}
 
 
+_ROOM_WORD = re.compile(r"(?:^|\s)(?:अतिरिक्त\s+)?(?:कक्ष\S*|क्ष\S*|क[0०]\S*|कमरा|रूम|रुम)(?:\s+\S+){0,3}\s*$")
+
+
 def booth_base(name):
-    """Booth name without the room label ('कक्ष संख्या-2', 'रूम न-3' ...): the building."""
+    """Booth name without the room label ('कक्ष संख्या-2', 'कक्ष संठे 2', 'क0 न0 2', 'रूम न-3' ...): the building.
+    The label is cut from its first room word to the end, so a garbled label ('संठे', 'संक्या') goes too."""
     n = unicodedata.normalize("NFC", name or "").translate(_DIG)
-    b = _ROOM_TAIL.sub("", n).strip(" ,-")
+    b = _ROOM_WORD.sub("", n).strip(" ,-")
+    if b == n.strip(" ,-"):
+        b = _ROOM_TAIL.sub("", n).strip(" ,-")
     return b if len(b.replace(" ", "")) >= 8 else n.strip()
+
+
+# Words that only say WHAT the building is (primary school, composite school ...). Many buildings share them, so they must not
+# decide whether two names are the same place -- the village / locality after them does.
+_GENERIC = ["प्राथमिक", "प्राइमरी", "उच्च", "उचच", "उच", "अपर", "कम्पोजिट", "विद्यालय", "स्कूल", "कालेज", "कॉलेज", "इण्टर",
+            "इंटर", "जूनियर", "हाईस्कूल", "हाई", "पी.एम.", "पीएम", "श्री", "राजकीय", "सरकारी", "अंगनवाडी", "आंगनवाड़ी", "केन्द्र",
+            "केंद्र", "पंचायत", "भवन", "सामुदायिक", "सेंटर", "माध्यमिक", "बालिका", "बालक", "आदर्श", "सीनियर", "बेसिक", "मदरसा"]
+_GENERIC_KEYS = None
+
+
+def booth_tail(base, common=()):
+    """The distinguishing part of a booth name: the base without its leading building-type words (the fixed list above, plus
+    any leading word that starts at least BOOTH_COMMON names in this AC -- misspelt 'composite' etc.)."""
+    global _GENERIC_KEYS
+    import difflib
+    if _GENERIC_KEYS is None:
+        _GENERIC_KEYS = sorted({booth_key(g) for g in _GENERIC if booth_key(g)})
+    toks = base.split()
+    i = 0
+    while i < len(toks) - 1:
+        k = booth_key(toks[i])
+        if k and (k in _GENERIC_KEYS or k in common or difflib.get_close_matches(k, _GENERIC_KEYS, 1, 0.78)):
+            i += 1
+        else:
+            break
+    return booth_key(" ".join(toks[i:]))
 
 
 def booth_key(base):
@@ -745,6 +777,11 @@ def _same_numbers(a, b):
 
 BOOTH_SIM = 0.86            # spelling-insensitive similarity that merges two parts anywhere in the AC
 BOOTH_SIM_NEXT = 0.76       # ... lower bar for neighbouring parts (n, n+1): the same building is usually printed in consecutive parts
+BOOTH_SHORT = 12            # a place name this short (spelling-insensitive characters) is compared on its own
+BOOTH_COMMON = 8            # a leading word seen in at least this many booth names is a building-type word, not a place
+BOOTH_AVG = 0.80            # mean similarity needed between two groups to merge them
+BOOTH_FLOOR = 0.66          # ... and no pair across them may be below this
+BOOTH_FAR = 100             # members of one booth more than this many part numbers apart -> "verify"
 BOOTH_VERIFY = 0.85         # a group whose least similar pair is below this is marked "verify"
 
 
@@ -762,14 +799,14 @@ def combine_booths(rows, ac):
         items.append(dict(r=r, part=part, base=b, key=booth_key(b)))
     items.sort(key=lambda x: x["part"])
     n = len(items)
-    par = list(range(n))
+    lead = collections.Counter(k for it in items for k in {booth_key(t) for t in it["base"].split()[:3]} if k)
+    common = {k for k, c in lead.items() if c >= max(BOOTH_COMMON, int(0.02 * n))}
+    for it in items:
+        it["tail"] = booth_tail(it["base"], common)
 
-    def find(x):
-        while par[x] != x:
-            par[x] = par[par[x]]; x = par[x]
-        return x
-
-    sim = {}
+    # pairwise: are two parts plausibly the same building?  Compared on the distinguishing tail (village / locality) AND on
+    # the whole name, both spelling-insensitive; same embedded numbers required.
+    sim, ok = {}, {}
     for i in range(n):
         if not items[i]["key"]:
             continue
@@ -777,14 +814,50 @@ def combine_booths(rows, ac):
             a, b = items[i]["key"], items[j]["key"]
             if not b or abs(len(a) - len(b)) > 14:
                 continue
-            if abs(items[i]["part"] - items[j]["part"]) > 1 and difflib.SequenceMatcher(None, a, b).quick_ratio() < BOOTH_SIM:
+            near = abs(items[i]["part"] - items[j]["part"]) <= 1
+            if not near and difflib.SequenceMatcher(None, a, b).quick_ratio() < BOOTH_SIM:
                 continue
-            ratio = difflib.SequenceMatcher(None, a, b, autojunk=False).ratio()
-            sim[(i, j)] = ratio
+            full = difflib.SequenceMatcher(None, a, b, autojunk=False).ratio()
+            ta, tb = items[i]["tail"], items[j]["tail"]
+            tail = difflib.SequenceMatcher(None, ta, tb, autojunk=False).ratio() if ta and tb else full
+            # short place name after the building-type words (a village): it IS the identity, and the shared 'primary school'
+            # prefix would make any two villages look alike -> judge on the place name alone. Long names: whole name.
+            r = tail if (ta and tb and max(len(ta), len(tb)) <= BOOTH_SHORT) else full
+            sim[(i, j)] = r
             if not _same_numbers(items[i]["base"], items[j]["base"]):
                 continue
-            if ratio >= BOOTH_SIM or (abs(items[i]["part"] - items[j]["part"]) <= 1 and ratio >= BOOTH_SIM_NEXT):
-                par[find(i)] = find(j)
+            if r >= BOOTH_SIM or (near and r >= BOOTH_SIM_NEXT):
+                ok[(i, j)] = r
+
+    # Group by average linkage, not single linkage: two groups merge only if their members are on the whole alike (mean
+    # similarity), with none of them clearly different -- so a chain A~B, B~C cannot pull A and C (or a hundred generically
+    # named schools) into one booth, while one badly read name still joins its group.
+    def cross(ca, cb):
+        vals = []
+        for x in ca:
+            for y in cb:
+                k = (min(x, y), max(x, y))
+                if k not in sim or not _same_numbers(items[x]["base"], items[y]["base"]) or sim[k] < BOOTH_FLOOR:
+                    return None
+                vals.append(sim[k])
+        return sum(vals) / len(vals)
+
+    cl = {i: [i] for i in range(n)}
+    where = list(range(n))
+    for (i, j), r in sorted(ok.items(), key=lambda kv: -kv[1]):
+        ci, cj = where[i], where[j]
+        if ci == cj:
+            continue
+        if abs(items[i]["part"] - items[j]["part"]) <= 1:       # consecutive parts: the same building is usually printed in a run
+            m = 1.0
+        else:
+            m = cross(cl[ci], cl[cj])
+        if m is not None and m >= BOOTH_AVG:
+            for y in cl[cj]:
+                where[y] = ci
+            cl[ci] += cl.pop(cj)
+    par = where
+    find = lambda x: par[x]
     groups = collections.defaultdict(list)
     for i in range(n):
         groups[find(i)].append(i)
@@ -806,7 +879,9 @@ def combine_booths(rows, ac):
         row["n_parts"] = len(members)
         row["parts_to_check"] = ", ".join(str(m["part"]) for m in members if m["r"].get("needs_review") == "Y")
         low = min([sim.get((a, b), 1.0) for a in ids for b in ids if a < b] or [1.0])
-        if low < BOOTH_VERIFY:
+        pn = sorted(m["part"] for m in members)
+        far = any(b - a > BOOTH_FAR for a, b in zip(pn, pn[1:]))     # same name in parts far apart: maybe two different places
+        if low < BOOTH_VERIFY or far:
             row["match_check"] = "verify"
         row.setdefault("match_check", "")
         out.append(row)
