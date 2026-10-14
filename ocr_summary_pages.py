@@ -42,7 +42,8 @@ import unicodedata
 import cv2
 import numpy as np
 
-VERSION = "s3"
+VERSION = "s4"
+WRITE_BOOTHS = False        # the booth-combined workbook is written only with --booths (or later, with --combine)
 REF_W = 1187.0          # page width the layout constants below were measured on (AC 1/2/174 PDFs); everything scales with W/REF_W
 
 FIELDS = ["ac_part", "ac_name", "booth_number", "booth_name", "last_serial", "total_electors"]
@@ -323,6 +324,156 @@ def fix_words(t):
     return " ".join(out)
 
 
+# ----------------------------------------------------------------------------------------------- restoring dropped conjuncts
+# The Hindi recognition models drop conjunct letters and misplace vowel signs in small print: माध्यमिक -> माधिमक,
+# गोवर्धन -> गोवधन, त्यागी -> यागी, इन्टर -> इटर, नम्बर -> नबर.  Dropping letters leaves the CONSONANT SKELETON of the word
+# intact except for the letters of a conjunct, and vowel signs never matter for it.  So a damaged word is matched to a correct
+# spelling only if (1) its consonants are the correct word's consonants with up to two conjunct members removed (and halants /
+# vowel signs ignored) and (2) the match is unique or settled by a spelling seen elsewhere (this page, this AC).  Words are
+# never replaced by something merely similar, and a word that is itself a known spelling is never touched.
+_VOWEL_SIGNS = set("ािीुूृॄॅॆेैॉॊोौँंः़ॢॣ")
+_HAL = "्"
+
+
+def _units(w):
+    """word -> list of (consonant/letter, in_conjunct) with vowel signs and nukta removed."""
+    w = unicodedata.normalize("NFD", unicodedata.normalize("NFC", w))
+    ch = [c for c in w if c not in _VOWEL_SIGNS]
+    out = []
+    for i, c in enumerate(ch):
+        if c == _HAL:
+            continue
+        conj = (i + 1 < len(ch) and ch[i + 1] == _HAL and i + 2 < len(ch)) or (i > 0 and ch[i - 1] == _HAL)
+        out.append((c, conj))
+    return out
+
+
+def skel_key(w):
+    return "".join(c for c, _ in _units(w))
+
+
+def _drop_keys(w, depth=2):
+    """Keys of the correct word w with up to `depth` conjunct members removed (the full key included)."""
+    u = _units(w)
+    keys = {"".join(c for c, _ in u)}
+    frontier = [u]
+    for d in range(depth):
+        nxt = []
+        for cur in frontier:
+            for i, (c, conj) in enumerate(cur):
+                if conj:
+                    cand = cur[:i] + cur[i + 1:]
+                    k = "".join(x for x, _ in cand)
+                    # two letters lost is only believable in a long word, and what is left must still be a real skeleton
+                    if d == 1 and (len(u) < 6 or len(k) < 4):
+                        continue
+                    if k not in keys and len(k) >= 2:
+                        keys.add(k); nxt.append(cand)
+        frontier = nxt
+    return keys
+
+
+def _lit_variants(w, depth=2):
+    """Spellings of w with a conjunct member (and its halant) cut out literally, vowel signs untouched: त्यागी -> यागी."""
+    w = unicodedata.normalize("NFC", w)
+    out, frontier = set(), {w}
+    for _ in range(depth):
+        nxt = set()
+        for cur in frontier:
+            for m in re.finditer(r"(?=([\u0915-\u0939\u0958-\u095F]\u094d|\u094d[\u0915-\u0939\u0958-\u095F]))", cur):
+                v = cur[:m.start()] + cur[m.start() + 2:]
+                if len(v) >= 3 and v not in out:
+                    out.add(v); nxt.add(v)
+        frontier = nxt
+    return out
+
+
+_DEV = re.compile(r"[ऀ-ॿ]")
+
+# Correct spellings of words that recur in booth / school names. Conjunct-bearing words matter most; a few plain words are
+# listed so that a wrong vowel sign (पिरषद -> परिषद) is repaired too.
+RESTORE_WORDS = """
+प्राथमिक पूर्व माध्यमिक उच्च उच्चतर विद्यालय महाविद्यालय विश्वविद्यालय कालेज कॉलेज इण्टर इन्टर इंटर राजकीय कन्या बालिका बालक
+सीनियर जूनियर बेसिक स्कूल कम्पोजिट कम्पोज़िट परिषद परिषदीय पालिका नगरपालिका पंचायत भवन सामुदायिक स्वास्थ्य केन्द्र केन्द्रीय केंद्र
+संस्कृत सरस्वती शिशु मन्दिर मंदिर इस्लामिया मदरसा चिकित्सालय अस्पताल आंगनबाड़ी श्रीमती स्वामी आदर्श प्रेमचन्द महात्मा गांधी गाँधी
+नेहरू अम्बेडकर आम्बेडकर शास्त्री सुभाष चन्द्र चन्द्रशेखर आजाद पब्लिक एकेडमी अकादमी क्रिश्चियन सेंट मिशन
+त्यागी गोवर्धन गोवर्धन लक्ष्मी लक्ष्मण ब्रह्म ब्राह्मण क्षत्रिय कृष्ण कृषि प्रताप प्रसाद प्रकाश प्रेम प्रदेश प्रधान राजेन्द्र सुरेन्द्र
+महेन्द्र नरेन्द्र धर्मेन्द्र जितेन्द्र देवेन्द्र रविन्द्र यशवन्त विद्या विज्ञान शिक्षा शिक्षण प्रशिक्षण तकनीकी सम्बन्धित उत्तर मध्य मध्यम
+स्थल राष्ट्रीय पुस्तकालय सहकारी कार्यालय विकास खण्ड ग्राम सचिवालय प्रारम्भिक प्रशासनिक प्रतिष्ठान प्रबन्धक
+कमरा नम्बर संख्या कक्ष अतिरिक्त परिसर भूमि क्षेत्र संस्थान संस्था स्थापना जन्म वर्ष
+खुर्द कलां उर्फ मुस्तकहम मुस्तक अहतमाल बुजुर्ग
+इस्लाम मुस्लिम हिन्दू जैन अग्रवाल वैश्य सनातन धर्म धर्मशाला आर्य समाज
+हनुमान शंकर गणेश सत्य नारायण रामचन्द्र रामेश्वर महेश्वरी वृन्दावन मथुरा अयोध्या
+""".split()
+
+
+class Restorer:
+    def __init__(self, words=RESTORE_WORDS):
+        self.words = list(dict.fromkeys(unicodedata.normalize("NFC", w) for w in words))
+        self.valid = set(self.words)
+        self.idx, self.lit = {}, {}
+        for w in self.words:
+            for k in _drop_keys(w):
+                self.idx.setdefault(k, []).append(w)
+            for v in _lit_variants(w):
+                self.lit.setdefault(v, []).append(w)
+
+    def restore(self, tok, local=(), counts=None):
+        """tok: one word. local: other words read on the same page (address line, village names) -- the strongest evidence.
+        counts: Counter of words seen in this AC (settles ties). Returns the repaired word, or tok unchanged."""
+        t = unicodedata.normalize("NFC", tok or "")
+        core = re.sub(r"[^ऀ-ॿ]", "", t)
+        if len(core) < 3 or not _DEV.search(core) or t in self.valid or any(c.isdigit() for c in t):
+            return tok
+        k = skel_key(core)
+        if len(k) < 3:                                          # too short for the skeleton test: only an exact cut-out of a conjunct
+            lit = list(dict.fromkeys(self.lit.get(t, ())))     # (त्यागी -> यागी); योगी, which has other vowel signs, is not touched
+            return lit[0] if len(lit) == 1 and len(core) >= 4 else tok
+        cands = []
+        for lw in local:                                        # a longer spelling of the SAME word read elsewhere on the page
+            lw = unicodedata.normalize("NFC", lw)
+            if lw != t and t in _lit_variants(lw):
+                cands.append((0, lw))
+        for w in self.idx.get(k, ()):
+            cands.append((1, w))
+        if not cands:
+            return tok
+        best = min(c[0] for c in cands)
+        pool = list(dict.fromkeys(w for p, w in cands if p == best))
+        if len(pool) > 1:
+            if counts:
+                pool.sort(key=lambda w: -counts.get(w, 0))
+                if counts.get(pool[0], 0) == counts.get(pool[1], 0):
+                    pool = pool[:1] if best == 1 and self.words.index(pool[0]) < self.words.index(pool[1]) else []
+                else:
+                    pool = pool[:1]
+            else:
+                return tok                                      # two correct spellings possible (इण्टर / इन्टर): the AC pass decides
+        return pool[0] if pool else tok
+
+    @staticmethod
+    def room_label(text):
+        """'नमबर-उ' / 'नबर 2' / 'नम्बर- 1' -> 'नम्बर-3' / 'नम्बर-2' / 'नम्बर-1'. A printed Latin 3 is read as the letter उ."""
+        t = re.sub(r"न\S{0,3}बर\s*[-–]?\s*(\d+|उ)(?=\s|$|[\u0900-\u097F])",
+                   lambda m: "नम्बर-" + ("3" if m.group(1) == "उ" else m.group(1)), text or "")
+        return re.sub(r"(नम्बर-\d+)(?=[\u0900-\u097F])", r"\1 ", t)
+
+    def restore_text(self, text, local=(), counts=None):
+        text = self.room_label(text)
+        toks = (text or "").split(" ")
+        return " ".join(self._tok(t, local, counts) for t in toks)
+
+    def _tok(self, t, local, counts):
+        # keep attached punctuation / room-label numbers: 'नम्बर-1', 'कला,' ...
+        m = re.match(r"^([ऀ-ॿ]+)(.*)$", t)
+        if not m:
+            return t
+        return self.restore(m.group(1), local, counts) + m.group(2)
+
+
+RESTORER = Restorer()
+
+
 def classify(t):
     t = unicodedata.normalize("NFC", t or "").replace(" ", "")
     if "नेट" in t or "इलेक्टर" in t or "इलैक्टर" in t:
@@ -405,6 +556,21 @@ def parse_page1(pg, reader, rv):
     else:
         flags.append("booth_cell_not_found")
 
+    # --- section 2: village / panchayat / post office / thana ... printed in plain type: a second, independent reading of the
+    #     place names that also occur in the booth name (used only to restore letters the booth-name reading dropped)
+    sec2 = []
+    for i in range(len(Hs) - 1):
+        a2, b2 = Hs[i], Hs[i + 1]
+        if b2 - a2 >= pg.S(300) and (not booth or a2 < booth[0]):
+            for (xa, xb) in ((0.64 * W, 0.97 * W), (left + ins, 0.40 * W)):
+                cell2 = pg.crop(xa, a2 + ins, xb, b2 - ins)
+                ink2 = np.flatnonzero((cell2 < 200).any(1))
+                if len(ink2):
+                    for gp in np.split(ink2, np.flatnonzero(np.diff(ink2) > pg.S(5)) + 1):
+                        if gp[-1] - gp[0] >= pg.S(8):
+                            sec2.append(cell2[max(gp[0] - 2, 0):gp[-1] + 3])
+            break
+
     # --- last row: voter counts of section 4
     y0, y1 = Hs[-2], Hs[-1]
     vlr = pg.vlines(y0 + 4, y1 - 4, 0.8)
@@ -418,8 +584,12 @@ def parse_page1(pg, reader, rv):
 
     # --- recognise word by word
     lines = [word_crops(ac_line, s, True)] + [word_crops(bd, s, i == 1) for i, bd in enumerate(bands)]
+    n_main = len(lines)
+    lines += [word_crops(b2_, s) for b2_ in sec2[:14]]
     toks = read_words(reader, lines)
-    ac_t, band_t = toks[0], toks[1:]
+    ac_t, band_t = toks[0], toks[1:n_main]
+    place_words = [re.sub(r"[^\u0900-\u097F]", "", t[0]) for ln in toks[n_main:] for t in ln]
+    place_words = [w for w in place_words if len(w) >= 3]
     # AC: "<no> - <name> (<reservation>)"
     num_img = lines[0][0]["img"] if lines[0] else None
     rest = ac_t[1:] if ac_t else []
@@ -463,6 +633,8 @@ def parse_page1(pg, reader, rv):
         addr = [t for ln in addr_lines for t in ln]
         voted = vote_with_address(rest, addr)
         rv["booth_name"] = fix_words(fix_booth_text(" ".join(t for t, _ in voted).strip(" -").translate(_DIG)))
+        addr_words = [re.sub(r"[^\u0900-\u097F]", "", t[0]) for t in addr]
+        rv["booth_name"] = RESTORER.restore_text(rv["booth_name"], [w for w in addr_words + place_words if len(w) >= 3])
         rv["_conf"].extend(sc for _, sc in voted)
         if no_tok is not None:
             nb = cell_values(reader, [lines[2][0]["img"]])[0] if len(lines) > 2 and lines[2] else ([], 0)
@@ -913,6 +1085,29 @@ def read_xlsx(path):
     return out
 
 
+def restore_booth_names(rows, log=None):
+    """AC-wide pass over the booth names: words restored with the help of the spellings used in the AC (settles इण्टर / इन्टर).
+    Idempotent. Returns {(old, new): n}."""
+    import collections
+    counts = collections.Counter(re.sub(r"[^\u0900-\u097F]", "", w) for r in rows for w in (r.get("booth_name") or "").split())
+    changes = collections.Counter()
+    for r in rows:
+        old = r.get("booth_name") or ""
+        if not old:
+            continue
+        new = RESTORER.restore_text(old, (), counts)
+        if new != old:
+            o, n_ = old.split(" "), new.split(" ")
+            if len(o) == len(n_):
+                for a, b in zip(o, n_):
+                    if a != b:
+                        changes[(a, b)] += 1
+            else:
+                changes[("(room label spacing)", "नम्बर-N")] += 1
+            r["booth_name"] = new
+    return changes
+
+
 def majority_ac_name(rows):
     """Replace a misread AC name by the name most PDFs of the same ac_number agree on (needs >= 3 agreeing)."""
     import collections
@@ -957,10 +1152,11 @@ def _run_sub(d, out_xlsx, pool, kw):
 
     def save(final=False):
         majority_ac_name(rows)
+        restore_booth_names(rows)
         order = {p.name: k for k, p in enumerate(sorted(pdfs, key=natural_key))}
         rows.sort(key=lambda r: order.get(r["pdf"], 10 ** 9))
         write_xlsx(rows, out_xlsx)
-        if final:
+        if final and WRITE_BOOTHS:
             bx, nb = write_booth_xlsx(rows, out_xlsx, ac)
             print(f"{d.name}: {len(rows)} parts -> {nb} booths -> {bx.name}")
 
@@ -1007,6 +1203,10 @@ def main():
     ap.add_argument("--out", help="--folder: a folder (file is named <AC number>_summary.xlsx) or an .xlsx path.  --root: output directory")
     ap.add_argument("--combine", metavar="SUMMARY.xlsx",
                     help="No PDF reading: build the booth-combined workbook (<AC>_booth_combined.xlsx, same folder) from an existing summary workbook")
+    ap.add_argument("--fix-names", metavar="SUMMARY.xlsx",
+                    help="No PDF reading: repair dropped letters in the booth names of an existing summary workbook (माधिमक -> माध्यमिक ...); "
+                         "the workbook is rewritten in place")
+    ap.add_argument("--booths", action="store_true", help="also write <AC>_booth_combined.xlsx after the summary (off by default)")
     ap.add_argument("--workers", type=int, default=1)
     ap.add_argument("--cpu-threads", type=int, default=4)
     ap.add_argument("--device", default=None)
@@ -1016,6 +1216,17 @@ def main():
                     help="paddle (default) = PaddleOCR recognition models. tess = Tesseract, only a stand-in for machines without PaddleOCR")
     ap.add_argument("--tessdata", help="with --engine tess: folder containing hin.traineddata")
     a = ap.parse_args()
+    global WRITE_BOOTHS
+    WRITE_BOOTHS = a.booths
+    if a.fix_names:
+        p = pathlib.Path(a.fix_names)
+        rows = read_xlsx(p)
+        ch = restore_booth_names(rows)
+        write_xlsx(rows, p)
+        print(f"{p.name}: {sum(ch.values())} words repaired in {len(rows)} rows")
+        for (x, y), n in ch.most_common(40):
+            print(f"  {x} -> {y}  x{n}")
+        return
     if a.combine:
         p = pathlib.Path(a.combine)
         rows = read_xlsx(p)

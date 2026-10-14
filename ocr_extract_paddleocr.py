@@ -331,7 +331,7 @@ import pandas as pd
 
 import ocr_extract as base
 
-VERSION = "v16"
+VERSION = "v17"
 
 TPL_MIN, TPL_MARGIN = base.TPL_MIN, base.TPL_MARGIN
 REVIEW_BELOW = 0.90  # confirmed against your colleague's CSV in earlier versions
@@ -819,6 +819,53 @@ def _cut_page(g, boxes, s):
     return out
 
 
+def _header_line2(g, boxes, s):
+    """Second line of the page header above the first card row ('परिवर्धन की सूची 1 (06-01-2026  01-04-2026 )' on an
+    addition-list page; the section name on a normal page) -> gray crop, or None."""
+    try:
+        top = min(b[1] for b in boxes)
+        hdr = g[:max(top - 2, 0), :int(0.75 * g.shape[1])]
+        ink = np.flatnonzero((hdr < 200).any(1))
+        if not len(ink):
+            return None
+        groups = np.split(ink, np.flatnonzero(np.diff(ink) > 1) + 1)      # text lines are separated by an empty pixel row
+        if len(groups) < 2:
+            return None
+        ln = hdr[max(groups[-1][0] - 1, 0):groups[-1][-1] + 2]
+        cols = np.flatnonzero((ln < 200).any(0))
+        return ln[:, cols[0]:cols[-1] + 1] if len(cols) else None
+    except Exception:
+        return None
+
+
+def read_addition_period(en, line, s):
+    """'(06-01-2026  01-04-2026 )' of the heading 'परिवर्धन की सूची' -> (from, to) as dd-mm-yyyy strings, or ('', '').
+    The heading line is cut into words, every word is read with the English/digit model, and the dates are taken from them."""
+    import datetime
+    if line is None:
+        return "", ""
+    cols = np.flatnonzero((line < 200).any(0))
+    if not len(cols):
+        return "", ""
+    cut = np.flatnonzero(np.diff(cols) > max(2, int(round(3.0 * s)))) + 1
+    crops = []
+    for seg in np.split(cols, cut):
+        im = base.prep(line[:, seg[0]:seg[-1] + 1], None, s)
+        if im is not None:
+            crops.append(im)
+    if not crops:
+        return "", ""
+    txt = " ".join(t for t, _ in base.run_rec(en, crops, "Addition heading"))
+    dates = []
+    for d_, m_, y_ in re.findall(r"(\d{2})\D{0,2}(\d{2})\D{0,2}(20\d{2})", txt.translate(base.DEV)):
+        try:
+            datetime.date(int(y_), int(m_), int(d_))
+            dates.append(f"{d_}-{m_}-{y_}")
+        except ValueError:
+            pass
+    return (dates[0], dates[1]) if len(dates) >= 2 else ("", "")
+
+
 def _layout_rate(cut):
     return sum(1 for c in cut if c[3]["layout_ok"]) / len(cut) if cut else 0.0
 
@@ -860,8 +907,9 @@ def extract_cards(pdf_path, log=print):
         log(f"    cutting cards: page {pno + 1}/{npg} ({len(cut)} cards)")
         if not cut:
             log(f"    [warn] page {pno + 1}: no cards found")
+        hdr = _header_line2(g, boxes, s) if any(c[3]["list_type"] == "addition" for c in cut) else None
         for ci, (img, se, f, info) in enumerate(cut):
-            cards.append(dict(pdf_page=pno + 1, card_on_page=ci + 1, f=f, info=info, img=img, s=se, hi={}, en={}))
+            cards.append(dict(pdf_page=pno + 1, card_on_page=ci + 1, f=f, info=info, img=img, s=se, hi={}, en={}, hdr=hdr, ps=s))
     if not cards:
         raise RuntimeError(
             f"{pathlib.Path(pdf_path).name}: 0 cards found on {pages_seen} body page(s) -- the page image "
@@ -918,7 +966,7 @@ def process_pdf(pdf_path: pathlib.Path, hi_models, en, log=print, dump_review=Fa
         cand = set()
         for k, cd in enumerate(cards):
             inf = cd["info"]
-            if inf["marker_ink"] > 8 or inf["stamp_px"] > 60:
+            if inf["marker_ink"] > 8 or inf["stamp_px"] > 60 or inf["list_type"] == "addition":     # addition cards: the <ac>_addition file needs their names
                 cand.add(k)
             else:
                 st_ = cd["en"].get("serial")
@@ -1128,6 +1176,13 @@ def process_pdf(pdf_path: pathlib.Path, hi_models, en, log=print, dump_review=Fa
     # ------------------------------------------------------------------
     # Row assembly
     # ------------------------------------------------------------------
+    period = {}                                   # pdf_page -> (from, to) of the addition list printed in the page heading
+    for cd in cards:
+        if cd["info"]["list_type"] == "addition" and cd["pdf_page"] not in period:
+            try:
+                period[cd["pdf_page"]] = read_addition_period(en, cd.get("hdr"), cd.get("ps", cd["s"]))
+            except Exception:
+                period[cd["pdf_page"]] = ("", "")
     rows, prev, prev_type = [], None, None
     for idx, cd in enumerate(cards):
         H, E, info = cd["hi"], cd["en"], cd["info"]
@@ -1280,6 +1335,7 @@ def process_pdf(pdf_path: pathlib.Path, hi_models, en, log=print, dump_review=Fa
             "deleted": "Y" if (stamped or code in KNOWN_STATUS_CODES) else "N",
             "deleted_stamp": "Y" if stamped else "N",
             "list_type": info["list_type"], "addition_section_no": sec,
+            "addition_from": period.get(cd["pdf_page"], ("", ""))[0], "addition_to": period.get(cd["pdf_page"], ("", ""))[1],
             "file_name": pdf_path.name, "pdf_page": cd["pdf_page"], "card_on_page": cd["card_on_page"],
             "confidence": conf, "needs_review": "Y" if why else "N", "review_reason": "|".join(why),
             "raw_ocr_body": raw_ocr_body, "stamp_px": info["stamp_px"], **(tess_cols if TESS["ok"] else {}),
@@ -1295,6 +1351,7 @@ def process_pdf(pdf_path: pathlib.Path, hi_models, en, log=print, dump_review=Fa
 
     df = pd.DataFrame(rows, columns=FIELDNAMES + (TESS_COLS if TESS["ok"] else []))
     df["serial_no"] = df["serial_no"].astype("Int64")
+    df.attrs["addition_rows"] = [r for r in rows if r["list_type"] == "addition"]       # every card of an addition list (also with --deleted-only)
     total_cards = len(df)
     if deleted_only:
         df = df[df["deleted"] == "Y"].reset_index(drop=True)
@@ -1358,7 +1415,7 @@ def _worker_process_pdf(pdf_path_str):
     elapsed = time.time() - t0
     print(f"{tag} done: {len(df)} cards in {elapsed:.1f}s "
           f"({elapsed/max(len(df),1):.2f}s/card)", flush=True)
-    return pdf_path.name, df, int(df.attrs.get("total_cards", len(df))), round(elapsed, 1)
+    return pdf_path.name, df, int(df.attrs.get("total_cards", len(df))), round(elapsed, 1), list(df.attrs.get("addition_rows", []))
 
 
 # ---------------------------------------------------------------------------
@@ -1413,6 +1470,32 @@ class VocabCorrector:
 
     _MATRAS = "\u093e\u093f\u0940\u0941\u0942\u0943\u0947\u0948\u094b\u094c"
 
+    def _conj_index(self):
+        """token with ONE conjunct member cut out (halant + consonant, or consonant + halant) -> strong tokens.
+        The models drop conjunct letters (सुरेन्द्र -> सुरेन्द, गोवर्धन -> गोवधन); unlike a single lost character the lost
+        part may be at the end, because a word ending in a conjunct is not a different real name when one is cut off."""
+        idx = getattr(self, "_conj", None)
+        if idx is None:
+            idx = self._conj = collections.defaultdict(list)
+            pat = re.compile(r"(?=([\u0915-\u0939\u0958-\u095F]\u094d|\u094d[\u0915-\u0939\u0958-\u095F]))")
+            for tok in self.strong:
+                if len(tok) >= 5:
+                    for m in pat.finditer(tok):
+                        idx[tok[:m.start()] + tok[m.start() + 2:]].append(tok)
+        return idx
+
+    def fix_conj(self, tok):
+        n = self.c.get(tok, 0)
+        if not self.enabled or len(tok) < 4 or n > VOCAB_SUB_RARE_MAX:
+            return tok
+        cands = [v for v in set(self._conj_index().get(tok, ())) if v != tok and self.strong[v] >= VOCAB_RATIO * max(n, 1)]
+        if not cands:
+            return tok
+        cands.sort(key=lambda v: -self.strong[v])
+        if len(cands) > 1 and self.strong[cands[0]] < 3 * self.strong[cands[1]]:
+            return tok
+        return cands[0]
+
     def _sub_index(self):
         idx = getattr(self, "_sub", None)
         if idx is None:
@@ -1456,7 +1539,7 @@ class VocabCorrector:
                 return t2
         cands = [v for v in set(self.ins.get(tok, ())) if v != tok and self.strong[v] >= VOCAB_RATIO * max(n, 1)]
         if not cands:
-            return tok
+            return self.fix_conj(tok)
         cands.sort(key=lambda v: -self.strong[v])
         if len(cands) > 1 and self.strong[cands[0]] < 2 * self.strong[cands[1]]:
             return tok                                                             # ambiguous -> leave it
@@ -1667,12 +1750,12 @@ def canon_house(df, log=print):
     return df
 
 
-def finalize_names(df, vocab_path, log=print):
+def finalize_names(df, vocab_path, log=print, save=True):
     """Engine arbitration + vocabulary pass over a finished DataFrame; updates the persistent vocab / lexicon files."""
     lex_path = (str(vocab_path) + ".agreed.json") if vocab_path else None
     lex_loaded = load_vocab(lex_path) if lex_path else collections.Counter()
     df, agreed = arbitrate_names(df, lex_loaded, log)
-    if lex_path and agreed:
+    if lex_path and agreed and save:
         save_vocab(lex_path, lex_loaded + agreed)
     df = df.drop(columns=[c for c in TESS_COLS if c in df.columns])
     df = canon_house(df, log)
@@ -1681,7 +1764,8 @@ def finalize_names(df, vocab_path, log=print):
     loaded = load_vocab(vocab_path)
     counts = build_vocab(df, loaded)
     df, n = apply_vocab(df, counts)
-    save_vocab(vocab_path, build_vocab(df, loaded))
+    if save:
+        save_vocab(vocab_path, build_vocab(df, loaded))
     log(f"  name vocabulary: {n} rows auto-corrected "
         f"(vocab file {vocab_path}: {len(counts)} tokens before this run's additions: {len(loaded)})")
     return df
@@ -1783,9 +1867,10 @@ def run_folder(folder: pathlib.Path, out_dir: pathlib.Path, workers: int,
     import json
     ac_no = (base.parse_filename(pdfs[0]).get("ac_number") or "").strip() or folder.name      # file names start with the AC number
     ac_no = str(int(ac_no)) if ac_no.isdigit() else ac_no
-    combined_path = out_dir / f"{ac_no}_combined.csv"
+    combined_path = out_dir / f"_combined_{ac_no}.csv"
     for old in (list(out_dir.glob("*_combined*.csv")) + list(out_dir.glob("*_combined*.csv.gz")) + list(out_dir.glob("*_combined*.xlsx"))
-                + list(out_dir.glob("*_combined*.partial*"))):
+                + list(out_dir.glob("*_combined*.partial*")) + list(out_dir.glob("*_addition_*.csv")) + list(out_dir.glob("*_addition_*.csv.gz"))
+                + list(out_dir.glob("*_addition_*.xlsx"))):
         old.unlink()                       # outputs of an earlier (finished or interrupted) run: they are rebuilt below from the saved per-PDF parts
 
     # ---- progress is saved per PDF in <out>/_parts/, so an interrupted run continues where it stopped ----------------
@@ -1842,7 +1927,7 @@ def run_folder(folder: pathlib.Path, out_dir: pathlib.Path, workers: int,
         for fut in concurrent.futures.as_completed(futures):
             pdf = futures[fut]
             try:
-                name, df, n_cards, secs = fut.result()
+                name, df, n_cards, secs, add_rows = fut.result()
             except Exception as exc:
                 failed.append(pdf.name)
                 print(f"  ! {pdf.name} failed: {exc}", file=sys.stderr)
@@ -1853,6 +1938,11 @@ def run_folder(folder: pathlib.Path, out_dir: pathlib.Path, workers: int,
             tmp_ = pc_.with_name(pc_.name + ".tmp")
             df.to_csv(tmp_, index=False, encoding="utf-8-sig")
             os.replace(tmp_, pc_)                                        # a part is either complete or absent
+            if add_rows:                                                 # people added to the roll (परिवर्धन की सूची) in this PDF
+                adf_ = pd.DataFrame(add_rows)
+                if slim:
+                    adf_ = adf_.drop(columns=[c for c in ("raw_ocr_body", "stamp_px", "file_name") if c in adf_.columns])
+                adf_.to_csv(pc_.with_name(pdf.name + ".add.csv"), index=False, encoding="utf-8-sig")
             st_ = {"cards": n_cards, "deleted": int((df["deleted"] == "Y").sum()), "rows": len(df), "seconds": secs}
             pj_.write_text(json.dumps(st_), encoding="utf-8")            # written last: its presence marks the part as finished
             stats[pdf.name] = st_
@@ -1881,7 +1971,8 @@ def run_folder(folder: pathlib.Path, out_dir: pathlib.Path, workers: int,
             chunks.append(cur)
         for k, group in enumerate(chunks, 1):
             ext_ = "xlsx" if xlsx else "csv"
-            final = out_dir / (f"{ac_no}_combined_{k:03d}.{ext_}" if max_rows else f"{ac_no}_combined.{ext_}")
+            # _combined_174.csv ; only when a folder has more rows than --max-rows: _combined_174_001.csv, _combined_174_002.csv ...
+            final = out_dir / (f"_combined_{ac_no}.{ext_}" if len(chunks) == 1 else f"_combined_{ac_no}_{k:03d}.{ext_}")
             frames = [pd.read_csv(part_files(p_)[0], dtype=str, keep_default_na=False, encoding="utf-8-sig") for p_ in group]
             rows_ = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=FIELDNAMES)
             out_df_ = finalize_names(rows_, vocab_path)
@@ -1895,6 +1986,27 @@ def run_folder(folder: pathlib.Path, out_dir: pathlib.Path, workers: int,
         # CSV so downstream tooling that expects the file to exist doesn't break
         pd.DataFrame(columns=FIELDNAMES).to_csv(combined_path, index=False, encoding="utf-8-sig")
         out_files.append(combined_path)
+    # ---- the people added to the roll (परिवर्धन की सूची): <ac>_addition_001.csv, a separate file next to the combined one -------
+    extra_files = []
+    add_parts = [parts_dir / (p_.name + ".add.csv") for p_ in done_pdfs if (parts_dir / (p_.name + ".add.csv")).exists()]
+    if add_parts:
+        try:
+            add_df = pd.concat([pd.read_csv(f_, dtype=str, keep_default_na=False, encoding="utf-8-sig") for f_ in add_parts], ignore_index=True)
+            add_df = finalize_names(add_df, vocab_path, save=False)        # same name clean-up as the combined file; the vocabulary files are not updated twice
+            front = [c for c in add_df.columns if c != "addition_from" and c != "addition_to"]
+            i_ = front.index("addition_section_no") + 1 if "addition_section_no" in front else len(front)
+            add_df = add_df[front[:i_] + [c for c in ("addition_from", "addition_to") if c in add_df.columns] + front[i_:]]
+            per = max_rows if max_rows else len(add_df)
+            for k, a0 in enumerate(range(0, len(add_df), max(per, 1)), 1):
+                fa = out_dir / f"{ac_no}_addition_{k:03d}.{'xlsx' if xlsx else 'csv'}"
+                if xlsx:
+                    write_xlsx_df(add_df.iloc[a0:a0 + per], fa)
+                else:
+                    add_df.iloc[a0:a0 + per].to_csv(fa, index=False, encoding="utf-8-sig")
+                extra_files.append(fa)
+            print(f"Additions (परिवर्धन की सूची): {len(add_df)} people -> {', '.join(f_.name for f_ in extra_files)}")
+        except Exception as exc:                                           # never lose the main output because of this side file
+            print(f"  ! could not write the addition file: {exc}", file=sys.stderr)
     print(f"\nDone: {len(done_pdfs)}/{len(pdfs)} PDFs ({resumed} reused from an earlier run, {processed} processed now), "
           f"{total_cards} cards, {total_deleted} deleted, in {time.time() - t_start:.0f}s.")
     if failed:
@@ -1915,6 +2027,16 @@ def run_folder(folder: pathlib.Path, out_dir: pathlib.Path, workers: int,
             f_.unlink()                              # CSV text of this kind compresses ~7-10x
             gz.append(g_)
         out_files = gz
+        gz2 = []
+        for f_ in extra_files:
+            if f_.suffix == ".csv":
+                g_ = f_.with_name(f_.name + ".gz")
+                with open(f_, "rb") as fi, gzip.open(g_, "wb", compresslevel=6) as fo:
+                    shutil.copyfileobj(fi, fo)
+                f_.unlink(); gz2.append(g_)
+            else:
+                gz2.append(f_)
+        extra_files = gz2
     print(f"Output: {', '.join(f.name for f in out_files)}")
 
     complete = (not failed and len(done_pdfs) == total_found)
@@ -1932,7 +2054,7 @@ def run_folder(folder: pathlib.Path, out_dir: pathlib.Path, workers: int,
         shutil.rmtree(parts_dir, ignore_errors=True)      # the saved progress is only needed until the folder is finished
     if upload:
         tag = folder.resolve().name
-        files = {f_: f"{tag}/{f_.name}" for f_ in out_files}
+        files = {f_: f"{tag}/{f_.name}" for f_ in out_files + extra_files}
         files[info_path] = f"{tag}/_run_info.json"
         if failed:
             files[out_dir / "_failed.txt"] = f"{tag}/_failed.txt"
