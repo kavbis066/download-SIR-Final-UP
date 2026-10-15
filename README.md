@@ -224,9 +224,10 @@ python ocr_extract_paddleocr.py --root downloads_small --only-file rest.txt --ou
 
 ### Extracting ASSD
 ```
-python ocr_extract_assd.py --root assd --out out_assd --only 1 2 3
-python ocr_extract_assd.py --root assd --out out_assd --only-file acs.txt --workers 6
-python ocr_extract_assd.py --root assd --out out_assd              # every AC folder
+python ocr_extract_assd.py --only 1                          # one AC (AC_001)
+python ocr_extract_assd.py --only 1 --limit 10                        # one AC (AC_001) but with limit
+python ocr_extract_assd.py --only-file acs.txt --workers 8   # ACs listed in a txt file
+python ocr_extract_assd.py --workers 8                       # every AC folder
 ```
 
 ---

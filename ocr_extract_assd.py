@@ -2,7 +2,7 @@
 """
 ocr_extract_assd.py (a1) -- "uncollectable elector" (ASD) report tables -> one CSV per AC.
 
-Input layout     assd/<ac>/uncollectable_elector_report_ac<ac>_part<N>.pdf
+Input layout     ASDD/output/AC_<ac>/ac<ac>_part<N>.pdf
 Output           out_assd/<ac>/<ac>_assd.csv        (split into <ac>_assd_001.csv ... at 100,000 rows)
                  out_assd/<ac>/_run_info.json
 
@@ -38,10 +38,10 @@ CHECKS (the `review` column)
   ocr_low_conf      (OCR mode only) a name was read with a score below 0.90
 
 USAGE
-  python ocr_extract_assd.py --root assd --out out_assd --only 1 2 3
-  python ocr_extract_assd.py --root assd --out out_assd --only-file acs.txt
-  python ocr_extract_assd.py --root assd --out out_assd                 # every AC folder under assd/
-  python ocr_extract_assd.py --pdf assd/1/uncollectable_elector_report_ac1_part1.pdf --out out_assd   # one file
+  python ocr_extract_assd.py --root ASDD/output --out out_assd --only 1 2 3
+  python ocr_extract_assd.py --root ASDD/output --out out_assd --only-file acs.txt
+  python ocr_extract_assd.py --root ASDD/output --out out_assd                 # every AC folder under assd/
+  python ocr_extract_assd.py --pdf ASDD/output/AC_001/ac1_part1.pdf --out out_assd   # one file
 """
 import argparse
 import collections
@@ -336,7 +336,7 @@ def process_pdf(path, mode="auto", device="cpu"):
     path = pathlib.Path(path)
     ac, part = parse_ac_part(path)
     if ac is None:
-        ac = path.parent.name
+        ac = ac_id(path.parent.name)
     ac_part = f"{ac}_{part}" if part else path.stem
     doc = pymupdf.open(str(path))
     vs = bhag = ""
@@ -410,6 +410,12 @@ def _work(args):
 
 
 # -------------------------------------------------------------------------------------------- one AC
+def ac_id(name):
+    """Folder name -> AC id: AC_001 / ac1 / 001 / 1 -> "1". Folders without a number keep their own name."""
+    m = re.search(r"\d+", str(name))
+    return str(int(m.group())) if m else str(name)
+
+
 def natural_key(p):
     return [int(t) if t.isdigit() else t for t in re.split(r"(\d+)", str(p))]
 
@@ -438,7 +444,7 @@ def write_ac(ac, df, out_dir, infos, mode, partial=False):
 
 
 def run_ac(folder, out_root, workers, mode, device, limit=None, pool=None):
-    ac = folder.name
+    ac = ac_id(folder.name)
     pdfs = sorted(folder.glob("*.pdf"), key=natural_key)
     if limit:
         pdfs = pdfs[:limit]
@@ -464,7 +470,7 @@ def _init_worker(device, mode):
 
 def main():
     ap = argparse.ArgumentParser(description="ASD (uncollectable elector) tables -> out_assd/<ac>/<ac>_assd.csv")
-    ap.add_argument("--root", default="assd", help="folder holding one sub-folder per AC (default: assd)")
+    ap.add_argument("--root", default="ASDD/output", help="folder holding one sub-folder per AC, e.g. AC_001 (default: ASDD/output)")
     ap.add_argument("--out", default="out_assd")
     ap.add_argument("--only", nargs="*", help="AC numbers / folder names to run")
     ap.add_argument("--only-file", help="text file with AC numbers (spaces, commas or lines; # comments)")
@@ -481,32 +487,31 @@ def main():
     out_root = pathlib.Path(args.out)
     if args.pdf:
         df, info = process_pdf(args.pdf, args.mode, args.device)
-        ac = parse_ac_part(args.pdf)[0] or pathlib.Path(args.pdf).parent.name
+        ac = parse_ac_part(args.pdf)[0] or ac_id(pathlib.Path(args.pdf).parent.name)
         write_ac(str(ac), df, out_root / str(ac), [info], args.mode, partial=True)
         print(json.dumps(info, ensure_ascii=False))
         return
 
     root = pathlib.Path(args.root)
-    want = [str(x) for x in (args.only or [])]
+    want = [ac_id(x) for x in (args.only or [])]
     if args.only_file:
         txt = re.sub(r"#.*", "", pathlib.Path(args.only_file).read_text(encoding="utf-8"))
-        want += [str(int(t)) if t.isdigit() else t for t in re.split(r"[\s,]+", txt) if t]
-    want = [str(int(w)) if w.isdigit() else w for w in want]
+        want += [ac_id(t) for t in re.split(r"[\s,]+", txt) if t]
     folders = sorted([d for d in root.iterdir() if d.is_dir()], key=natural_key)
     if want:
-        folders = [d for d in folders if d.name in want or (d.name.isdigit() and str(int(d.name)) in want)]
-        missing = [w for w in want if w not in {d.name for d in folders}]
+        folders = [d for d in folders if ac_id(d.name) in want]
+        missing = [w for w in want if w not in {ac_id(d.name) for d in folders}]
         if missing:
             print(f"[warn] no folder under {root} for: {', '.join(missing)}")
     todo = []
     for d in folders:
-        info = out_root / d.name / "_run_info.json"
+        info = out_root / ac_id(d.name) / "_run_info.json"
         if not args.force and not args.limit and info.exists():
             try:
                 done = json.loads(info.read_text(encoding="utf-8"))
                 n_pdf = len(list(d.glob("*.pdf")))
                 if done.get("version") == VERSION and done.get("complete") and done.get("parts") == n_pdf:
-                    print(f"[AC {d.name}] already done ({n_pdf} PDFs, {done.get('rows')} rows) -- skipped (use --force to redo)")
+                    print(f"[AC {ac_id(d.name)}] already done ({n_pdf} PDFs, {done.get('rows')} rows) -- skipped (use --force to redo)")
                     continue
             except Exception:
                 pass
