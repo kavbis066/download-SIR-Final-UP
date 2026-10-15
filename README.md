@@ -222,6 +222,13 @@ ls downloads | sort -V | tail -n +101 > rest.txt
 python ocr_extract_paddleocr.py --root downloads_small --only-file rest.txt --out outputs --workers 3 --cpu-threads 2 --gzip
 ```
 
+### Extracting ASSD
+```
+python ocr_extract_assd.py --root assd --out out_assd --only 1 2 3
+python ocr_extract_assd.py --root assd --out out_assd --only-file acs.txt --workers 6
+python ocr_extract_assd.py --root assd --out out_assd              # every AC folder
+```
+
 ---
 
 ## If a run is interrupted
