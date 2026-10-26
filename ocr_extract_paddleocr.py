@@ -918,7 +918,7 @@ def extract_cards(pdf_path, log=print):
 
 
 def process_pdf(pdf_path: pathlib.Path, hi_models, en, log=print, dump_review=False, review_dir=None,
-                second_opinion="auto"):
+                second_opinion="auto", additions_only=False):
     """hi_models: list of (model, name) tuples -- one or more loaded Hindi
     TextRecognition models (see base.load_rec_all). Every Hindi field crop is
     OCR'd through ALL of them and the highest-scoring reading wins (see get()
@@ -955,8 +955,15 @@ def process_pdf(pdf_path: pathlib.Path, hi_models, en, log=print, dump_review=Fa
                     jobs["en"].append((k, fld, im))
 
     log(f"    {len(cards)} cards found, running OCR...")
-    deleted_only = bool(os.environ.get("OCR_DELETED_ONLY"))
-    if deleted_only:
+    deleted_only = bool(os.environ.get("OCR_DELETED_ONLY")) and not additions_only
+    if additions_only:
+        # Backfill of the <ac>_addition file for a folder that was finished before that file existed: OCR only the cards of
+        # the परिवर्धन की सूची pages; every other card is cut (cheap, OpenCV) but never read.
+        cand = {k for k, cd in enumerate(cards) if cd["info"]["list_type"] == "addition"}
+        jobs["en"] = [j for j in jobs["en"] if j[0] in cand]
+        jobs["hi"] = [j for j in jobs["hi"] if j[0] in cand]
+        log(f"    additions-only: {len(cand)} of {len(cards)} cards are on addition-list pages -> OCR on those only")
+    elif deleted_only:
         # Serial number of EVERY card first (cheap; the sequence check needs the neighbours), then the full read only on
         # cards that can be deleted: a status marker at the left, a DELETED stamp, or a letter printed inside the serial box.
         sj = [j for j in jobs["en"] if j[1] == "serial"]
@@ -1353,7 +1360,9 @@ def process_pdf(pdf_path: pathlib.Path, hi_models, en, log=print, dump_review=Fa
     df["serial_no"] = df["serial_no"].astype("Int64")
     df.attrs["addition_rows"] = [r for r in rows if r["list_type"] == "addition"]       # every card of an addition list (also with --deleted-only)
     total_cards = len(df)
-    if deleted_only:
+    if additions_only:
+        df = df.iloc[0:0]                                  # only df.attrs["addition_rows"] is wanted
+    elif deleted_only:
         df = df[df["deleted"] == "Y"].reset_index(drop=True)
     df.attrs["total_cards"] = total_cards
     return df
@@ -1416,6 +1425,16 @@ def _worker_process_pdf(pdf_path_str):
     print(f"{tag} done: {len(df)} cards in {elapsed:.1f}s "
           f"({elapsed/max(len(df),1):.2f}s/card)", flush=True)
     return pdf_path.name, df, int(df.attrs.get("total_cards", len(df))), round(elapsed, 1), list(df.attrs.get("addition_rows", []))
+
+
+def _worker_additions_pdf(pdf_path_str):
+    """Backfill worker: returns (name, addition_rows, n_cards, seconds) -- no per-PDF CSV, only the addition-list cards."""
+    pdf_path = pathlib.Path(pdf_path_str)
+    tag = f"[{pdf_path.name}]"
+    t0 = time.time()
+    df = process_pdf(pdf_path, _WORKER["hi"], _WORKER["en"], log=lambda m: print(f"{tag} {m}", flush=True),
+                     second_opinion=_WORKER.get("so", "auto"), additions_only=True)
+    return pdf_path.name, list(df.attrs.get("addition_rows", [])), int(df.attrs.get("total_cards", 0)), round(time.time() - t0, 1)
 
 
 # ---------------------------------------------------------------------------
@@ -1850,6 +1869,27 @@ def upload_files(files, dest, endpoint=None, presign_hours=0):
 # Multi-PDF, multi-process batch mode
 # ---------------------------------------------------------------------------
 
+def _write_additions(add_df, out_dir, ac_no, max_rows, xlsx):
+    """<ac>_addition_001.csv (or .xlsx) next to the combined file: the people on the परिवर्धन की सूची pages."""
+    front = [c for c in add_df.columns if c != "addition_from" and c != "addition_to"]
+    i_ = front.index("addition_section_no") + 1 if "addition_section_no" in front else len(front)
+    add_df = add_df[front[:i_] + [c for c in ("addition_from", "addition_to") if c in add_df.columns] + front[i_:]]
+    per = max_rows if max_rows else len(add_df)
+    files = []
+    for k, a0 in enumerate(range(0, len(add_df), max(per, 1)), 1):
+        fa = out_dir / f"{ac_no}_addition_{k:03d}.{'xlsx' if xlsx else 'csv'}"
+        if xlsx:
+            write_xlsx_df(add_df.iloc[a0:a0 + per], fa)
+        else:
+            add_df.iloc[a0:a0 + per].to_csv(fa, index=False, encoding="utf-8-sig")
+        files.append(fa)
+    return files
+
+
+def has_addition_file(out_dir):
+    return any(out_dir.glob("*_addition_*.csv")) or any(out_dir.glob("*_addition_*.csv.gz")) or any(out_dir.glob("*_addition_*.xlsx"))
+
+
 def run_folder(folder: pathlib.Path, out_dir: pathlib.Path, workers: int,
                recursive: bool, device, cpu_threads: int, limit=None,
                vocab_path=None, upload=None, s3_endpoint=None, presign_hours=0, second_opinion="auto",
@@ -1987,23 +2027,14 @@ def run_folder(folder: pathlib.Path, out_dir: pathlib.Path, workers: int,
         pd.DataFrame(columns=FIELDNAMES).to_csv(combined_path, index=False, encoding="utf-8-sig")
         out_files.append(combined_path)
     # ---- the people added to the roll (परिवर्धन की सूची): <ac>_addition_001.csv, a separate file next to the combined one -------
-    extra_files = []
+    extra_files, n_add = [], 0
     add_parts = [parts_dir / (p_.name + ".add.csv") for p_ in done_pdfs if (parts_dir / (p_.name + ".add.csv")).exists()]
     if add_parts:
         try:
             add_df = pd.concat([pd.read_csv(f_, dtype=str, keep_default_na=False, encoding="utf-8-sig") for f_ in add_parts], ignore_index=True)
             add_df = finalize_names(add_df, vocab_path, save=False)        # same name clean-up as the combined file; the vocabulary files are not updated twice
-            front = [c for c in add_df.columns if c != "addition_from" and c != "addition_to"]
-            i_ = front.index("addition_section_no") + 1 if "addition_section_no" in front else len(front)
-            add_df = add_df[front[:i_] + [c for c in ("addition_from", "addition_to") if c in add_df.columns] + front[i_:]]
-            per = max_rows if max_rows else len(add_df)
-            for k, a0 in enumerate(range(0, len(add_df), max(per, 1)), 1):
-                fa = out_dir / f"{ac_no}_addition_{k:03d}.{'xlsx' if xlsx else 'csv'}"
-                if xlsx:
-                    write_xlsx_df(add_df.iloc[a0:a0 + per], fa)
-                else:
-                    add_df.iloc[a0:a0 + per].to_csv(fa, index=False, encoding="utf-8-sig")
-                extra_files.append(fa)
+            n_add = len(add_df)
+            extra_files = _write_additions(add_df, out_dir, ac_no, max_rows, xlsx)
             print(f"Additions (परिवर्धन की सूची): {len(add_df)} people -> {', '.join(f_.name for f_ in extra_files)}")
         except Exception as exc:                                           # never lose the main output because of this side file
             print(f"  ! could not write the addition file: {exc}", file=sys.stderr)
@@ -2046,6 +2077,7 @@ def run_folder(folder: pathlib.Path, out_dir: pathlib.Path, workers: int,
             "files": [f.name for f in out_files], "first_pdf": pdfs[0].name, "last_pdf": pdfs[-1].name,
             "per_pdf": [{"ac_part": _ac_part(p_), "pdf": p_.name, "cards": stats[p_.name]["cards"], "deleted": stats[p_.name]["deleted"],
                          "seconds": stats[p_.name]["seconds"]} for p_ in done_pdfs],
+            "additions_checked": bool(complete), "addition_rows": n_add, "addition_files": [f.name for f in extra_files],
             "seconds": round(time.time() - t_start, 1), "complete": complete,
             "finished_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
     info_path = out_dir / "_run_info.json"                # also the "this folder is done" marker for --root resume
@@ -2060,6 +2092,67 @@ def run_folder(folder: pathlib.Path, out_dir: pathlib.Path, workers: int,
             files[out_dir / "_failed.txt"] = f"{tag}/_failed.txt"
         upload_files(files, upload, s3_endpoint, presign_hours)
     return info
+
+
+def backfill_additions(sub, out_dir, pool, recursive, vocab_path, upload, s3_endpoint, presign_hours,
+                       gzip_csv, max_rows, slim, xlsx):
+    """A folder that was finished BEFORE the addition file existed: read only the परिवर्धन की सूची cards of its PDFs and write
+    <ac>_addition_001.csv. The combined file and everything else in the folder are left exactly as they are."""
+    import json
+    pdfs = sorted(sub.rglob("*.pdf") if recursive else sub.glob("*.pdf"), key=lambda p: natural_key(p.relative_to(sub)))
+    ac_no = (base.parse_filename(pdfs[0]).get("ac_number") or "").strip() or sub.name
+    ac_no = str(int(ac_no)) if ac_no.isdigit() else ac_no
+    t0 = time.time()
+    futures = {pool.submit(_worker_additions_pdf, str(p)): p for p in pdfs}
+    got, failed = {}, []
+    for n, fut in enumerate(concurrent.futures.as_completed(futures), 1):
+        p = futures[fut]
+        try:
+            name, rows, n_cards, secs = fut.result()
+        except Exception as exc:
+            failed.append(p.name)
+            print(f"  ! {p.name} failed: {exc}", file=sys.stderr)
+            continue
+        got[p] = rows
+        print(f"  [{n}/{len(pdfs)}] {name}: {len(rows)} addition cards (of {n_cards}), {secs}s", flush=True)
+    rows_all = [r for p in pdfs if p in got for r in got[p]]
+    files, n_add = [], 0
+    if rows_all:
+        add_df = pd.DataFrame(rows_all)
+        if slim:
+            add_df = add_df.drop(columns=[c for c in ("raw_ocr_body", "stamp_px", "file_name") if c in add_df.columns])
+        import io
+        add_df = pd.read_csv(io.StringIO(add_df.to_csv(index=False)), dtype=str, keep_default_na=False)    # same dtypes as the combined run
+        add_df = finalize_names(add_df, vocab_path, save=False)         # same name clean-up; the vocabulary files are left untouched
+        n_add = len(add_df)
+        files = _write_additions(add_df, out_dir, ac_no, max_rows, xlsx)
+        if gzip_csv and not xlsx:
+            import gzip
+            gz = []
+            for f_ in files:
+                g_ = f_.with_name(f_.name + ".gz")
+                with open(f_, "rb") as fi, gzip.open(g_, "wb", compresslevel=6) as fo:
+                    shutil.copyfileobj(fi, fo)
+                f_.unlink(); gz.append(g_)
+            files = gz
+        print(f"Additions (परिवर्धन की सूची): {n_add} people -> {', '.join(f_.name for f_ in files)}")
+    elif not failed:
+        print("No addition-list (परिवर्धन की सूची) pages in this AC -- no addition file needed.")
+    info_path = out_dir / "_run_info.json"
+    if not failed:                                         # a failed PDF means the check is not finished: the next run tries again
+        try:
+            info = json.loads(info_path.read_text(encoding="utf-8"))
+        except Exception:
+            info = {}
+        info.update({"additions_checked": True, "addition_rows": n_add, "addition_files": [f_.name for f_ in files],
+                     "additions_backfilled_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())})
+        info_path.write_text(json.dumps(info, ensure_ascii=False, indent=2), encoding="utf-8")
+    else:
+        print(f"  ! {len(failed)} PDF(s) failed -- run the same command again to finish the addition file", file=sys.stderr)
+    if upload and files:
+        tag = sub.resolve().name
+        upload_files({**{f_: f"{tag}/{f_.name}" for f_ in files}, info_path: f"{tag}/_run_info.json"}, upload, s3_endpoint, presign_hours)
+    return {"pdfs": len(pdfs), "addition_rows": n_add, "failed": len(failed), "seconds": round(time.time() - t0, 1)}
 
 
 def run_root(root: pathlib.Path, out_root: pathlib.Path, workers, device, cpu_threads, limit=None, vocab_path=None,
@@ -2089,8 +2182,24 @@ def run_root(root: pathlib.Path, out_root: pathlib.Path, workers, device, cpu_th
             marker = out_dir / "_run_info.json"
             if marker.exists() and not force and not limit:
                 try:
-                    if json.loads(marker.read_text(encoding="utf-8")).get("complete"):
-                        print(f"[{n}/{len(subs)}] {sub.name}: already done -- skipped (use --force to redo)")
+                    done_ = json.loads(marker.read_text(encoding="utf-8"))
+                    if done_.get("complete"):
+                        if has_addition_file(out_dir) or done_.get("additions_checked"):
+                            print(f"[{n}/{len(subs)}] {sub.name}: already done -- skipped (use --force to redo)")
+                        else:
+                            # finished by an older version: only the <ac>_addition file is missing -> add just that file
+                            print(f"\n[{n}/{len(subs)}] ===== {sub.name}: already done, but has no addition file -> reading only the addition-list pages =====", flush=True)
+                            try:
+                                r_ = backfill_additions(sub, out_dir, pool, recursive, vocab_path, upload, s3_endpoint, presign_hours,
+                                                        gzip_csv, max_rows, slim, xlsx)
+                                summary.append({"folder": sub.name, "additions_backfill": r_["addition_rows"], "pdfs_found": r_["pdfs"]})
+                            except Exception as exc:
+                                print(f"  ! addition backfill for {sub.name} failed: {type(exc).__name__}: {exc}", file=sys.stderr)
+                                summary.append({"folder": sub.name, "error": f"{type(exc).__name__}: {exc}"})
+                            if getattr(pool, "_broken", False):
+                                pool.shutdown(wait=False)
+                                pool = concurrent.futures.ProcessPoolExecutor(
+                                    max_workers=workers, initializer=_worker_init, initargs=(device, cpu_threads, second_opinion))
                         continue
                 except Exception:
                     pass
