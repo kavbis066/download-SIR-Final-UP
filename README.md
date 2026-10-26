@@ -184,6 +184,41 @@ python ocr_extract_paddleocr.py --root downloads --only-file acs.txt --out all_o
 python ocr_extract_paddleocr.py --root downloads --out all_out --workers 6 --cpu-threads 2
 ```
 
+Add the `<ac>_addition_001.csv` file to folders that were already finished
+
+Folders processed before the addition file existed have no `<ac>_addition_001.csv`. The same `--root` command fills them in. It checks each finished folder for an addition file and, if one is missing, reads **only** the परिवर्धन की सूची pages and writes that one file. The combined CSV and everything else in the folder are not touched.
+
+List the ACs in a text file (one per line, or separated by spaces), then run the same command you used for the main run:
+
+```bash
+# acs.txt  ->  86
+#              2
+#              3
+python ocr_extract_paddleocr.py --root downloads --out out_deleted --only-file acs.txt --deleted-only --workers 6 --cpu-threads 2
+```
+
+For a single AC:
+
+```bash
+python ocr_extract_paddleocr.py --root downloads --out out_deleted --only 86 --deleted-only --workers 6 --cpu-threads 2
+```
+
+How it behaves:
+
+| Situation in `out_deleted/<ac>/` | What happens |
+|---|---|
+| Finished, no `*_addition_*` file, not checked before | Only the addition-list pages are read and `<ac>_addition_001.csv` is written |
+| Finished, addition file already there | Skipped |
+| Finished, AC has no addition pages | No file is written. The AC is marked `additions_checked` in `_run_info.json`, so it is not scanned again |
+| A PDF failed during the check | The AC is not marked checked. Run the same command again to retry |
+| Not finished | A normal run: the combined and addition files are both written |
+
+Notes:
+- Use `--root`. With `--folder`, a finished AC is re-read completely instead.
+- Keep the same flags as the original run (`--deleted-only`, `--slim`, `--xlsx`, `--gzip`, `--max-rows`).
+- The PDFs must still be in the `--root` folder.
+- The run is much faster than the original, because OCR runs only on the addition-list cards.
+
 ### D4. Useful options
 
 | Option | Effect |
